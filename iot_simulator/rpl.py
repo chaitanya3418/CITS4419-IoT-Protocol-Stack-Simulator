@@ -21,6 +21,11 @@ RPL_ROOT_RANK = 0
 # simulator's explicit two-byte sentinel for an unknown/infinite rank.
 RPL_INFINITY = 0xFFFF
 
+# The project requires DIOs to be broadcast through the MAC layer but does
+# not prescribe an IPv6 destination for the simplified packet. The simulator
+# uses the standard link-local RPL multicast group as its documented choice.
+RPL_MULTICAST_IPV6 = "ff02::1a"
+
 _RPL_DIO = struct.Struct("!BBH")
 
 

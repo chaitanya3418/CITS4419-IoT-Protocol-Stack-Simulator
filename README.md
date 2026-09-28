@@ -19,28 +19,53 @@ The project is being implemented incrementally so every protocol operation can b
 - [x] **B1 — Simplified IPv6 packet/header**
 - [x] **B2 — ICMPv6 RPL DIO message format**
 - [x] **B3 — RPL rank and preferred-parent state**
-  - Node A starts as the RPL root with Rank 0
-  - Nodes B, C, D and E start with infinite/unknown Rank
-  - Every node has a parent field initialized to `None`
-  - `0xFFFF` is used internally as the two-byte infinity sentinel
-  - RPL state is displayed during node setup
-- [ ] **B4 — DIO broadcast and rank updates**
+- [x] **B4 — DIO broadcast and rank updates**
+  - DIO encapsulation: RPL → IPv6 → MAC CONTROL
+  - IPv6 Next Header = 58 for ICMPv6/RPL
+  - MAC destination = `FF:FF:FF:FF`
+  - One-hop neighbors parse the IPv6 packet and DIO
+  - Candidate rank = advertised rank + 1
+  - Rank/parent change only when the candidate route is better
+  - No automatic DIO rebroadcast yet
 - [ ] **B5 — Full RPL topology convergence**
 - [ ] **B6 — Part B tests and demonstration**
 
-## Initial RPL State
+## B4 DIO Flow
 
-Before any DIO messages are exchanged:
+A node with a finite rank can call `send_rpl_dio()`.
+
+For example, Node A begins at Rank 0 and broadcasts:
 
 ```text
-Node A: Rank=0,        Parent=None
-Node B: Rank=infinity, Parent=None
-Node C: Rank=infinity, Parent=None
-Node D: Rank=infinity, Parent=None
-Node E: Rank=infinity, Parent=None
+RPL DIO (Rank 0)
+        ↓
+IPv6 (Next Header 58)
+        ↓
+MAC CONTROL (FF:FF:FF:FF)
+        ↓
+     B and C
 ```
 
-B4 will add DIO processing so a node can update its rank and preferred parent when it receives a better route.
+Nodes B and C calculate:
+
+```text
+Candidate Rank = advertised Rank + 1
+               = 0 + 1
+               = 1
+```
+
+Because Rank 1 is better than their initial infinite rank, they update to:
+
+```text
+B: Rank=1, Parent=A
+C: Rank=1, Parent=A
+```
+
+Nodes D and E remain at infinity in B4 because B and C do not automatically rebroadcast their updated DIOs yet. That automatic propagation is intentionally reserved for B5.
+
+## IPv6 multicast design choice
+
+The assignment specifies MAC broadcast for RPL DIOs but does not specify the simplified IPv6 destination address. This simulator uses `ff02::1a` as the RPL multicast destination, while the MAC destination remains the assignment-required `FF:FF:FF:FF`.
 
 ## Run the current simulator
 
@@ -48,7 +73,7 @@ B4 will add DIO processing so a node can update its rank and preferred parent wh
 python main.py
 ```
 
-Run the existing Part A automated tests:
+Run the existing tests:
 
 ```bash
 python -m unittest discover -s tests -v
