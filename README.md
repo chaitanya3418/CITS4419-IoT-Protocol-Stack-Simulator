@@ -9,34 +9,26 @@ The project is being implemented incrementally so every protocol operation can b
 ### Part A — IEEE 802.15.4 MAC
 
 - [x] **A1 — Node model and fixed five-node topology**
-  - Node class
-  - MAC and IPv6 addresses from the project brief
-  - One-hop neighbor lists
-  - Per-node MAC sequence number initialized to 0
-  - `setup()` initialization logging
 - [x] **A2 — Simplified MAC frame format and serialization**
-  - Exact 12-byte fixed header
-  - DATA=1, ACK=2, CONTROL=3
-  - Binary serialization and parsing
 - [x] **A3 — Unicast DATA frames and MAC ACKs**
-  - Direct one-hop unicast delivery
-  - Per-node sequence-number progression
-  - Receiver automatically returns the required ACK
-  - ACK carries the same sequence number as the DATA frame
 - [x] **A4 — Broadcast CONTROL frames**
-  - Broadcast address `FF:FF:FF:FF`
-  - Delivery to all one-hop neighbors
-  - No MAC acknowledgements for broadcasts
-  - CONTROL payload handling ready for RPL DIOs
 - [x] **A5 — Part A tests and demonstration**
-  - Exact topology/address checks
-  - MAC 12-byte header and serialization checks
-  - Payload-length validation
-  - Unicast DATA/ACK tests
-  - Sequence-number progression tests
-  - Non-neighbor delivery rejection
-  - Broadcast CONTROL/no-ACK tests
-  - Repeatable Part A demonstration script
+
+### Part B — IPv6 and RPL
+
+- [x] **B1 — Simplified IPv6 packet/header**
+  - 16-byte source IPv6 address
+  - 16-byte destination IPv6 address
+  - 1-byte Next Header field
+  - 2-byte Payload Length field
+  - Variable-length payload
+  - Binary serialization and parsing
+  - Next Header constants for UDP (17), ESP (50), ICMPv6/RPL (58), and No Next Header (59)
+- [ ] **B2 — ICMPv6 RPL DIO message format**
+- [ ] **B3 — RPL rank and preferred-parent state**
+- [ ] **B4 — DIO broadcast and rank updates**
+- [ ] **B5 — Full RPL topology convergence**
+- [ ] **B6 — Part B tests and demonstration**
 
 ## Run the current simulator
 
@@ -52,14 +44,14 @@ Run the complete Part A demonstration:
 python demo_part_a.py
 ```
 
-Run the automated Part A tests:
+Run the Part A automated tests:
 
 ```bash
 python -m unittest discover -s tests -v
 ```
 
-## Part A status
+## Current status
 
-Part A is now complete. The MAC layer demonstrates the simplified IEEE 802.15.4 behavior required by the assignment: node addressing, per-node sequence numbers, frame construction/parsing, one-hop unicast DATA with ACKs, and one-hop broadcast CONTROL without ACKs.
+Part A is complete.
 
-The next development stage is Part B: simplified IPv6 and RPL topology construction.
+Part B1 now provides the simplified IPv6 packet structure required for later RPL, UDP, and ESP encapsulation. RPL DIO processing is intentionally deferred to B2 and later sub-parts.
