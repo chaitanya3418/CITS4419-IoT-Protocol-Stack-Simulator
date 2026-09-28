@@ -1,7 +1,8 @@
-"""Static network topology required by CITS4419 Project Part A."""
+"""Static network topology required by CITS4419 Project Parts A and B."""
 
 from .network import Network
 from .node import Node
+from .rpl import RPL_INFINITY, RPL_ROOT_RANK
 
 
 NODE_CONFIG = {
@@ -34,13 +35,15 @@ NODE_CONFIG = {
 
 
 def build_iot_network() -> dict[str, Node]:
-    """Create nodes A-E and attach them to the simulated wireless network."""
+    """Create nodes A-E with their initial MAC and RPL state."""
     nodes = {
         name: Node(
             name=name,
             mac_address=config["mac_address"],
             ipv6_address=config["ipv6_address"],
             neighbors=list(config["neighbors"]),
+            rank=RPL_ROOT_RANK if name == "A" else RPL_INFINITY,
+            parent=None,
         )
         for name, config in NODE_CONFIG.items()
     }

@@ -17,46 +17,39 @@ The project is being implemented incrementally so every protocol operation can b
 ### Part B — IPv6 and RPL
 
 - [x] **B1 — Simplified IPv6 packet/header**
-  - 16-byte source IPv6 address
-  - 16-byte destination IPv6 address
-  - 1-byte Next Header field
-  - 2-byte Payload Length field
-  - Variable-length payload
-  - Binary serialization and parsing
-  - Next Header constants for UDP (17), ESP (50), ICMPv6/RPL (58), and No Next Header (59)
 - [x] **B2 — ICMPv6 RPL DIO message format**
-  - Type = 155
-  - Code = 1 for DIO
-  - Rank = 2 bytes
-  - Exact 4-byte binary DIO representation
-  - Serialization and parsing with field validation
-- [ ] **B3 — RPL rank and preferred-parent state**
+- [x] **B3 — RPL rank and preferred-parent state**
+  - Node A starts as the RPL root with Rank 0
+  - Nodes B, C, D and E start with infinite/unknown Rank
+  - Every node has a parent field initialized to `None`
+  - `0xFFFF` is used internally as the two-byte infinity sentinel
+  - RPL state is displayed during node setup
 - [ ] **B4 — DIO broadcast and rank updates**
 - [ ] **B5 — Full RPL topology convergence**
 - [ ] **B6 — Part B tests and demonstration**
 
-## Run the current simulator
+## Initial RPL State
 
-Initialize the five IoT nodes:
+Before any DIO messages are exchanged:
+
+```text
+Node A: Rank=0,        Parent=None
+Node B: Rank=infinity, Parent=None
+Node C: Rank=infinity, Parent=None
+Node D: Rank=infinity, Parent=None
+Node E: Rank=infinity, Parent=None
+```
+
+B4 will add DIO processing so a node can update its rank and preferred parent when it receives a better route.
+
+## Run the current simulator
 
 ```bash
 python main.py
 ```
 
-Run the complete Part A demonstration:
-
-```bash
-python demo_part_a.py
-```
-
-Run the Part A automated tests:
+Run the existing Part A automated tests:
 
 ```bash
 python -m unittest discover -s tests -v
 ```
-
-## Current status
-
-Part A is complete.
-
-Part B1 provides the simplified IPv6 packet structure. Part B2 now provides the simplified ICMPv6 RPL DIO binary message format. Node rank state, parent selection, and DIO propagation are intentionally deferred to B3 and later sub-parts.

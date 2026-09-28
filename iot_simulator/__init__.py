@@ -15,6 +15,8 @@ from .rpl import (
     ICMPV6_RPL_TYPE,
     RPL_CODE_DIO,
     RPL_DIO_LENGTH,
+    RPL_INFINITY,
+    RPL_ROOT_RANK,
     RPLDIO,
 )
 from .topology import build_iot_network, setup_network
@@ -35,6 +37,8 @@ __all__ = [
     "Node",
     "RPL_CODE_DIO",
     "RPL_DIO_LENGTH",
+    "RPL_INFINITY",
+    "RPL_ROOT_RANK",
     "RPLDIO",
     "build_iot_network",
     "setup_network",
