@@ -11,11 +11,18 @@ from .ipv6 import (
 from .mac import BROADCAST_MAC, MAC_HEADER_LENGTH, MACFrame, FrameType
 from .network import Network
 from .node import Node
+from .rpl import (
+    ICMPV6_RPL_TYPE,
+    RPL_CODE_DIO,
+    RPL_DIO_LENGTH,
+    RPLDIO,
+)
 from .topology import build_iot_network, setup_network
 
 __all__ = [
     "BROADCAST_MAC",
     "FrameType",
+    "ICMPV6_RPL_TYPE",
     "IPV6_HEADER_LENGTH",
     "IPv6Packet",
     "MAC_HEADER_LENGTH",
@@ -26,6 +33,9 @@ __all__ = [
     "NEXT_HEADER_UDP",
     "Network",
     "Node",
+    "RPL_CODE_DIO",
+    "RPL_DIO_LENGTH",
+    "RPLDIO",
     "build_iot_network",
     "setup_network",
 ]
