@@ -26,6 +26,38 @@ class Network:
         self.nodes_by_ipv6 = {
             node.ipv6_address: node for node in nodes.values()
         }
+        self.server = None
+
+    def attach_server(self, server) -> None:
+        """Attach the wired CoAP server to gateway Node A."""
+
+        self.server = server
+        server.network = self
+
+    def transmit_to_server(self, packet_bytes: bytes):
+        """Deliver an IPv6 packet from gateway Node A to the wired server."""
+
+        if self.server is None:
+            raise RuntimeError(
+                "CoAP server is not attached to the network"
+            )
+
+        print(
+            "[Network][Wired] Delivering IPv6 packet: "
+            "Node A -> CoAP Server"
+        )
+
+        return self.server.receive_ipv6(packet_bytes)
+
+    def transmit_from_server(self, packet_bytes: bytes) -> None:
+        """Deliver a server IPv6 packet to gateway Node A."""
+
+        print(
+            "[Network][Wired] Delivering IPv6 packet: "
+            "CoAP Server -> Node A"
+        )
+
+        self.nodes["A"].receive_ipv6(packet_bytes)
 
     def node_name_for_ipv6(self, ipv6_address: str) -> str:
         """Resolve an IoT node name from its configured IPv6 address."""
@@ -91,3 +123,58 @@ class Network:
             )
 
             receiver.receive_mac(frame_bytes)
+
+    def next_hop_for_ipv6(
+        self,
+        sender: Node,
+        destination_ipv6: str,
+    ) -> Node | None:
+        """Return the next IoT node along the converged RPL tree."""
+
+        # The CoAP server is connected directly to root Node A.
+        if destination_ipv6 == "2001:db8::1":
+            if sender.name == "A":
+                # A has reached the wired gateway side.
+                return None
+
+            if sender.parent is None:
+                raise RuntimeError(
+                    f"Node {sender.name} has no RPL parent"
+                )
+
+            return self.nodes[sender.parent]
+
+        destination = self.nodes_by_ipv6.get(destination_ipv6)
+
+        if destination is None:
+            raise ValueError(
+                f"Unknown IPv6 destination: {destination_ipv6}"
+            )
+
+        if destination.name == sender.name:
+            return None
+
+        # Build destination -> ... -> root path.
+        path_to_root = [destination]
+        current = destination
+
+        while current.parent is not None:
+            current = self.nodes[current.parent]
+            path_to_root.append(current)
+
+        path_names = [node.name for node in path_to_root]
+
+        # sender is an ancestor of destination:
+        # move downward to the child leading toward destination.
+        if sender.name in path_names:
+            sender_index = path_names.index(sender.name)
+            return path_to_root[sender_index - 1]
+
+        # Otherwise move upward toward sender's preferred parent.
+        if sender.parent is None:
+            raise RuntimeError(
+                f"No route from Node {sender.name} "
+                f"to {destination_ipv6}"
+            )
+
+        return self.nodes[sender.parent]

@@ -9,9 +9,12 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
-from .ipv6 import IPV6_HEADER_LENGTH, NEXT_HEADER_ICMPV6, IPv6Packet
+from .ipv6 import IPV6_HEADER_LENGTH, NEXT_HEADER_ICMPV6, IPv6Packet, NEXT_HEADER_UDP
 from .mac import BROADCAST_MAC, FrameType, MACFrame
 from .rpl import RPL_INFINITY, RPL_MULTICAST_IPV6, RPLDIO
+
+from .udp import serialize_udp, deserialize_udp, serialize_udp_payload
+from .coap import serialize_coap, deserialize_coap
 
 if TYPE_CHECKING:
     from .network import Network
@@ -141,6 +144,124 @@ class Node:
 
         self._require_network().transmit(self, frame.to_bytes())
 
+    def send_udp(
+        self,
+        payload,
+        src_port=50000,
+        dst_port=5683,
+    ):
+        """Create a UDP datagram carrying an upper-layer payload."""
+
+        # Temporary integration bridge.
+        # The serializers will be moved into the shared package later.
+
+        payload_bytes = serialize_udp_payload(payload)
+
+        udp_datagram = {
+            "source_port": src_port,
+            "destination_port": dst_port,
+            "length": 8 + len(payload_bytes),
+            "checksum": 0,
+            "payload": payload,
+        }
+
+
+        print(
+            f"[Node {self.name}][UDP] "
+            "Encapsulating upper-layer payload"
+        )
+        print(
+            f"[Node {self.name}][UDP] Source Port={src_port}"
+        )
+        print(
+            f"[Node {self.name}][UDP] Destination Port={dst_port}"
+        )
+        print(
+            f"[Node {self.name}][UDP] "
+            f"Length={udp_datagram['length']} bytes"
+        )
+
+        return udp_datagram
+
+    def send_coap(self, temperature):
+        """Create the Part C CoAP CON POST request."""
+
+        token = b"\x01\x02"
+
+        coap_message = {
+            "version": 1,
+            "type": "CON",
+            "token_length": len(token),
+            "code": "POST",
+            "message_id": 1001,
+            "token": token,
+            "options": {
+                "Uri-Path": "temperature"
+            },
+            "payload": f"Temperature={temperature}°C"
+        }
+
+        print(f"[Node {self.name}][CoAP] Creating CON POST request")
+        print(f"[Node {self.name}][CoAP] Uri-Path=/temperature")
+        print(
+            f"[Node {self.name}][CoAP] "
+            f"Message ID={coap_message['message_id']}"
+        )
+        print(f"[Node {self.name}][CoAP] Token={token.hex()}")
+        print(
+            f"[Node {self.name}][CoAP] "
+            f"Payload={coap_message['payload']}"
+        )
+
+        return coap_message
+
+    def send_ipv6(
+        self,
+        payload: bytes,
+        destination_ipv6: str,
+        next_header: int,
+    ) -> int | None:
+        """Create an IPv6 packet and send it toward its next RPL hop."""
+
+        ipv6_packet = IPv6Packet(
+            source_ipv6=self.ipv6_address,
+            destination_ipv6=destination_ipv6,
+            next_header=next_header,
+            payload=payload,
+        )
+
+        print(
+            f"[Node {self.name}][IPv6] Creating packet: "
+            f"Source={ipv6_packet.source_ipv6}, "
+            f"Destination={ipv6_packet.destination_ipv6}, "
+            f"Next Header={ipv6_packet.next_header}, "
+            f"Payload Length={len(ipv6_packet.payload)}"
+        )
+
+        network = self._require_network()
+        next_hop = network.next_hop_for_ipv6(
+            self,
+            destination_ipv6,
+        )
+
+        if next_hop is None:
+            print(
+                f"[Node {self.name}][IPv6] Destination reached "
+                f"or ready for gateway delivery"
+            )
+            return None
+
+        print(
+            f"[Node {self.name}][IPv6] Next RPL hop="
+            f"Node {next_hop.name}"
+        )
+
+        return self.send_mac(
+            payload=ipv6_packet.to_bytes(),
+            destination_mac=next_hop.mac_address,
+            frame_type=FrameType.DATA,
+        )
+
     def send_rpl_dio(self) -> int:
         """Broadcast this node's current RPL rank using IPv6 and MAC."""
         if self.rank == RPL_INFINITY:
@@ -218,6 +339,14 @@ class Node:
                 destination_mac=frame.source_mac,
                 acknowledged_sequence=frame.sequence_number,
             )
+
+            # Part C/D DATA frames carry IPv6 packets.
+            if len(frame.payload) >= IPV6_HEADER_LENGTH:
+                print(
+                    f"[Node {self.name}][MAC] Passing DATA payload to IPv6"
+                )
+                self.receive_ipv6(frame.payload)
+
             return
 
         if frame.frame_type == FrameType.CONTROL:
@@ -245,7 +374,8 @@ class Node:
         )
 
     def receive_ipv6(self, packet_bytes: bytes) -> None:
-        """Parse an IPv6 packet and dispatch an ICMPv6/RPL payload."""
+        """Parse, forward, or deliver an IPv6 packet."""
+
         packet = IPv6Packet.from_bytes(packet_bytes)
 
         print(
@@ -256,16 +386,72 @@ class Node:
             f"Payload Length={len(packet.payload)}"
         )
 
-        if packet.next_header != NEXT_HEADER_ICMPV6:
-            print(
-                f"[Node {self.name}][IPv6] Next Header "
-                f"{packet.next_header} is not RPL/ICMPv6"
+        # RPL CONTROL traffic is processed locally.
+        if packet.next_header == NEXT_HEADER_ICMPV6:
+            self.receive_rpl_dio(
+                dio_bytes=packet.payload,
+                source_ipv6=packet.source_ipv6,
             )
             return
 
-        self.receive_rpl_dio(
-            dio_bytes=packet.payload,
-            source_ipv6=packet.source_ipv6,
+        # This node is only an intermediate router.
+        if packet.destination_ipv6 != self.ipv6_address:
+            network = self._require_network()
+
+            next_hop = network.next_hop_for_ipv6(
+                self,
+                packet.destination_ipv6,
+            )
+
+            if next_hop is None:
+                print(
+                    f"[Node {self.name}][IPv6] Packet reached "
+                    f"gateway for destination="
+                    f"{packet.destination_ipv6}"
+                )
+
+                if self.name == "A":
+                    print(
+                        f"[Node A][IPv6] Forwarding packet "
+                        f"through wired interface to server"
+                    )
+
+                    network.transmit_to_server(packet_bytes)
+
+                return
+
+            print(
+                f"[Node {self.name}][IPv6] Forwarding packet "
+                f"toward Node {next_hop.name}"
+            )
+
+            # IMPORTANT:
+            # Forward the original IPv6 packet unchanged.
+            # Only the MAC addresses change at each hop.
+            self.send_mac(
+                payload=packet_bytes,
+                destination_mac=next_hop.mac_address,
+                frame_type=FrameType.DATA,
+            )
+            return
+
+        if packet.next_header == NEXT_HEADER_UDP:
+
+            print(
+                f"[Node {self.name}][IPv6] Passing payload to UDP"
+            )
+
+            udp_datagram = deserialize_udp(
+                packet.payload,
+                secure=False,
+            )
+
+            self.receive_udp(udp_datagram)
+            return
+
+        print(
+            f"[Node {self.name}][IPv6] Upper-layer protocol "
+            f"Next Header={packet.next_header} is not integrated yet"
         )
 
     def receive_rpl_dio(
@@ -331,3 +517,53 @@ class Node:
         # rank. Better-route-only updates prevent endless rebroadcast loops.
         self.send_rpl_dio()
         return True
+
+    def receive_udp(self, udp_datagram):
+        """Process a UDP datagram delivered to this IoT node."""
+
+        print()
+        print(f"[Node {self.name}][UDP] Received UDP datagram")
+        print(
+            f"[Node {self.name}][UDP] "
+            f"Source Port={udp_datagram['source_port']}"
+        )
+        print(
+            f"[Node {self.name}][UDP] "
+            f"Destination Port={udp_datagram['destination_port']}"
+        )
+        print(
+            f"[Node {self.name}][UDP] "
+            f"Length={udp_datagram['length']} bytes"
+        )
+
+        if udp_datagram["destination_port"] != 50000:
+            print(
+                f"[Node {self.name}][UDP] Datagram is not for this client"
+            )
+            return
+
+        print(
+            f"[Node {self.name}][UDP] Passing payload to CoAP"
+        )
+
+        self.receive_coap(udp_datagram["payload"])
+
+
+    def receive_coap(self, coap_message):
+        """Process the CoAP response returned by the server."""
+
+        print(f"[Node {self.name}][CoAP] Received CoAP response")
+        print(f"[Node {self.name}][CoAP] Type={coap_message['type']}")
+        print(f"[Node {self.name}][CoAP] Code={coap_message['code']}")
+        print(
+            f"[Node {self.name}][CoAP] "
+            f"Message ID={coap_message['message_id']}"
+        )
+        print(
+            f"[Node {self.name}][CoAP] "
+            f"Token={coap_message['token'].hex()}"
+        )
+        print(
+            f"[Node {self.name}][CoAP] "
+            f"Payload={coap_message['payload']}"
+        )

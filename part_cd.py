@@ -6,117 +6,12 @@ import struct
 
 from cryptography.hazmat.primitives import padding
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+from iot_simulator import IPv6Packet, NEXT_HEADER_UDP, udp
 
+from iot_simulator.udp import serialize_udp_payload, deserialize_udp, serialize_udp
+from iot_simulator.coap import serialize_coap, deserialize_coap
+from iot_simulator.dtls import serialize_dtls, deserialize_dtls
 
-def serialize_udp_payload(payload):
-            # DTLS record
-            if (
-                isinstance(payload, dict)
-                and "protected_data" in payload
-                and "epoch" in payload
-                and "sequence_number" in payload
-            ):
-                return serialize_dtls(payload)
-
-            # Plain CoAP message used in Part C
-            return serialize_coap(payload)
-
-def deserialize_dtls(data):
-    if len(data) < 13:
-        raise ValueError("DTLS record is too short")
-
-    record_type = data[0]
-    version = int.from_bytes(data[1:3], "big")
-    epoch = int.from_bytes(data[3:5], "big")
-    sequence_number = int.from_bytes(data[5:11], "big")
-    length = int.from_bytes(data[11:13], "big")
-
-    protected_data = data[13:13 + length]
-
-    if len(protected_data) != length:
-        raise ValueError("Invalid DTLS protected-data length")
-
-    return {
-        "type": record_type,
-        "version": version,
-        "epoch": epoch,
-        "sequence_number": sequence_number,
-        "length": length,
-        "protected_data": protected_data
-    }
-
-def serialize_coap(coap_message):
-    serializable = coap_message.copy()
-
-    # bytes cannot be directly stored in JSON
-    serializable["token"] = coap_message["token"].hex()
-
-    return json.dumps(
-        serializable,
-        ensure_ascii=False,
-        separators=(",", ":")
-    ).encode("utf-8")
-
-def deserialize_coap(data):
-    coap_message = json.loads(data.decode("utf-8"))
-
-    # Convert token hex string back into bytes
-    coap_message["token"] = bytes.fromhex(coap_message["token"])
-
-    return coap_message
-
-def serialize_dtls(dtls_record):
-    return (
-        dtls_record["type"].to_bytes(1, "big")
-        + dtls_record["version"].to_bytes(2, "big")
-        + dtls_record["epoch"].to_bytes(2, "big")
-        + dtls_record["sequence_number"].to_bytes(6, "big")
-        + dtls_record["length"].to_bytes(2, "big")
-        + dtls_record["protected_data"]
-    )
-
-def serialize_udp(udp_datagram):
-    payload = udp_datagram["payload"]
-
-    # Part D: UDP payload is a DTLS record
-    payload_bytes = serialize_dtls(payload)
-
-    udp_length = 8 + len(payload_bytes)
-
-    header = struct.pack(
-        "!HHHH",
-        udp_datagram["source_port"],
-        udp_datagram["destination_port"],
-        udp_length,
-        udp_datagram["checksum"]
-    )
-
-    return header + payload_bytes
-
-def deserialize_udp(data):
-    if len(data) < 8:
-        raise ValueError("UDP datagram is too short")
-
-    source_port, destination_port, length, checksum = struct.unpack(
-        "!HHHH",
-        data[:8]
-    )
-
-    if length < 8 or length > len(data):
-        raise ValueError("Invalid UDP length")
-
-    payload_bytes = data[8:length]
-
-    # Part D: UDP payload contains a DTLS record
-    dtls_record = deserialize_dtls(payload_bytes)
-
-    return {
-        "source_port": source_port,
-        "destination_port": destination_port,
-        "length": length,
-        "checksum": checksum,
-        "payload": dtls_record
-    }
 
 # TODO(INTEGRATION):
 # Temporary Node with mockdata scaffold for standalone Part C/D development.
@@ -538,6 +433,7 @@ class CoAPServer:
     def __init__(self):
         self.name = "Server"
         self.ipv6_address = "2001:db8::1"
+        self.mac_address = "00:00:01:02"
         self.udp_port = 5683
 
         # Part D - DTLS security context.
@@ -558,6 +454,99 @@ class CoAPServer:
         # Track accepted inbound ESP sequence numbers for replay protection.
         self.received_esp_sequence_numbers = set()
 
+    def receive_ipv6(self, packet_bytes):
+        """Receive an IPv6 packet delivered by gateway Node A."""
+
+        packet = IPv6Packet.from_bytes(packet_bytes)
+
+        print()
+        print(
+            f"[{self.name}][IPv6] Received packet: "
+            f"Source={packet.source_ipv6}, "
+            f"Destination={packet.destination_ipv6}, "
+            f"Next Header={packet.next_header}, "
+            f"Payload Length={len(packet.payload)}"
+        )
+
+        if packet.destination_ipv6 != self.ipv6_address:
+            print(
+                f"[{self.name}][IPv6] Packet is not for this server"
+            )
+            return None
+
+        if packet.next_header != NEXT_HEADER_UDP:
+            print(
+                f"[{self.name}][IPv6] Unexpected Next Header="
+                f"{packet.next_header}"
+            )
+            return None
+
+        print(
+            f"[{self.name}][IPv6] Passing payload to UDP"
+        )
+
+        udp_datagram = deserialize_udp(
+            packet.payload,
+            secure=False
+        )
+
+        coap_response = self.receive_udp(
+            udp_datagram,
+            secure=False,
+        )
+
+        if coap_response is None:
+            return None
+
+        udp_response = self.send_udp(
+            coap_response,
+            dst_port=50000,
+        )
+
+        udp_bytes = serialize_udp(
+            udp_response
+        )
+
+        self.send_ipv6(
+            payload=udp_bytes,
+            destination_ipv6=packet.source_ipv6,
+            next_header=NEXT_HEADER_UDP,
+        )
+
+        return coap_response
+
+    def send_ipv6(
+        self,
+        payload,
+        destination_ipv6,
+        next_header,
+    ):
+        """Send an IPv6 packet from the server through gateway Node A."""
+
+        if self.network is None:
+            raise RuntimeError(
+                "CoAP server is not attached to a network"
+            )
+
+        packet = IPv6Packet(
+            source_ipv6=self.ipv6_address,
+            destination_ipv6=destination_ipv6,
+            next_header=next_header,
+            payload=payload,
+        )
+
+        print()
+        print(
+            f"[{self.name}][IPv6] Creating packet: "
+            f"Source={packet.source_ipv6}, "
+            f"Destination={packet.destination_ipv6}, "
+            f"Next Header={packet.next_header}, "
+            f"Payload Length={len(packet.payload)}"
+        )
+
+        self.network.transmit_from_server(
+            packet.to_bytes()
+        )
 
     def receive_udp(self, udp_datagram, secure=False):
         print(f"[{self.name}][UDP] Received UDP datagram")
@@ -785,6 +774,7 @@ class CoAPServer:
         coap_message = deserialize_coap(plaintext)
         print(f"[{self.name}][DTLS] Passing plaintext to CoAP")
         return coap_message
+    
 
     def send_ipsec(self, udp_datagram):
         plaintext = serialize_udp(udp_datagram)
