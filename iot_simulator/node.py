@@ -10,6 +10,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from .mac import BROADCAST_MAC, FrameType, MACFrame
+from .rpl import RPL_INFINITY
 
 if TYPE_CHECKING:
     from .network import Network
@@ -24,6 +25,11 @@ class Node:
     ipv6_address: str
     neighbors: list[str] = field(default_factory=list)
     mac_sequence_number: int = 0
+
+    # Part B RPL state.
+    rank: int = RPL_INFINITY
+    parent: str | None = None
+
     network: Network | None = field(default=None, repr=False, compare=False)
 
     # Observable MAC state used by later tests and protocol layers.
@@ -36,9 +42,13 @@ class Node:
 
     def setup(self) -> None:
         """Initialize the node and print its required identification details."""
+        rank_text = "infinity" if self.rank == RPL_INFINITY else str(self.rank)
+        parent_text = self.parent if self.parent is not None else "None"
+
         print(
             f"[Node {self.name}][SETUP] Initialized: "
-            f"MAC={self.mac_address}, IPv6={self.ipv6_address}"
+            f"MAC={self.mac_address}, IPv6={self.ipv6_address}, "
+            f"RPL Rank={rank_text}, Parent={parent_text}"
         )
 
     def _require_network(self) -> Network:

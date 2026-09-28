@@ -1,4 +1,4 @@
-"""Simplified ICMPv6 RPL DIO message format for CITS4419 Part B.
+"""Simplified ICMPv6 RPL structures and state for CITS4419 Part B.
 
 The assignment defines a teaching-oriented RPL DIO structure containing:
     Type   1 byte  (155)
@@ -13,6 +13,13 @@ import struct
 ICMPV6_RPL_TYPE = 155
 RPL_CODE_DIO = 1
 RPL_DIO_LENGTH = 4
+
+RPL_ROOT_RANK = 0
+
+# The project states that non-root nodes begin at "infinity".
+# Because the transmitted Rank field is two bytes, 0xFFFF is used as the
+# simulator's explicit two-byte sentinel for an unknown/infinite rank.
+RPL_INFINITY = 0xFFFF
 
 _RPL_DIO = struct.Struct("!BBH")
 
