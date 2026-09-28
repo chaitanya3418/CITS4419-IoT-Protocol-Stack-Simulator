@@ -25,7 +25,12 @@ The project is being implemented incrementally so every protocol operation can b
   - Receiver automatically returns a MAC ACK
   - ACK carries the same sequence number as the DATA frame
   - Sender parses and records the returned ACK
-- [ ] **A4 — Broadcast CONTROL frames**
+- [x] **A4 — Broadcast CONTROL frames**
+  - Uses broadcast MAC address `FF:FF:FF:FF`
+  - Broadcast is delivered to every one-hop neighbor
+  - CONTROL payload is extracted and stored by receivers
+  - Broadcast frames do not generate MAC acknowledgements
+  - Provides the MAC behavior needed for RPL DIO broadcasts in Part B
 - [ ] **A5 — Part A tests and demonstration**
 
 ## Current run
@@ -34,6 +39,6 @@ The project is being implemented incrementally so every protocol operation can b
 python main.py
 ```
 
-At the end of Part A3, the MAC layer can deliver a unicast DATA frame between directly connected neighbors and automatically return the required MAC ACK.
+At the end of Part A4, the MAC layer supports both one-hop unicast DATA/ACK communication and one-hop broadcast CONTROL delivery.
 
-Broadcast CONTROL delivery is intentionally left for Part A4 so each protocol feature remains in a separate pull request.
+Part A5 will add the repeatable Part A demonstration and automated tests.

@@ -29,6 +29,10 @@ class Node:
     # Observable MAC state used by later tests and protocol layers.
     last_ack_sequence: int | None = field(default=None, init=False)
     received_mac_payloads: list[bytes] = field(default_factory=list, init=False)
+    received_control_payloads: list[bytes] = field(
+        default_factory=list,
+        init=False,
+    )
 
     def setup(self) -> None:
         """Initialize the node and print its required identification details."""
@@ -55,19 +59,20 @@ class Node:
         destination_mac: str,
         frame_type: FrameType = FrameType.DATA,
     ) -> int:
-        """Create and transmit a unicast DATA frame.
-
-        Part A3 intentionally implements only unicast DATA/ACK behaviour.
-        Broadcast CONTROL transmission is added separately in Part A4.
-        """
-        if frame_type != FrameType.DATA:
-            raise NotImplementedError(
-                "Part A3 send_mac() currently supports DATA frames only"
+        """Create and transmit a DATA or broadcast CONTROL MAC frame."""
+        if frame_type == FrameType.ACK:
+            raise ValueError(
+                "ACK frames must be created with send_mac_ack()"
             )
 
-        if destination_mac == BROADCAST_MAC:
-            raise NotImplementedError(
-                "Broadcast MAC transmission is implemented in Part A4"
+        if frame_type == FrameType.DATA and destination_mac == BROADCAST_MAC:
+            raise ValueError(
+                "Part A uses broadcast transmission for CONTROL frames only"
+            )
+
+        if frame_type == FrameType.CONTROL and destination_mac != BROADCAST_MAC:
+            raise ValueError(
+                "CONTROL frames in Part A4 must use the broadcast MAC address"
             )
 
         sequence = self._next_mac_sequence()
@@ -76,16 +81,22 @@ class Node:
             source_mac=self.mac_address,
             destination_mac=destination_mac,
             sequence_number=sequence,
-            frame_type=FrameType.DATA,
+            frame_type=frame_type,
             payload=payload,
         )
 
+        action = (
+            "Broadcasting"
+            if destination_mac == BROADCAST_MAC
+            else "Transmitting"
+        )
+
         print(
-            f"[Node {self.name}][MAC] Creating DATA frame: "
+            f"[Node {self.name}][MAC] Creating {frame_type.name} frame: "
             f"Seq={sequence}, Payload Length={len(payload)}"
         )
         print(
-            f"[Node {self.name}][MAC] Transmitting DATA frame: "
+            f"[Node {self.name}][MAC] {action} {frame_type.name} frame: "
             f"Source MAC={self.mac_address}, "
             f"Destination MAC={destination_mac}"
         )
@@ -120,10 +131,13 @@ class Node:
         self._require_network().transmit(self, frame.to_bytes())
 
     def receive_mac(self, frame_bytes: bytes) -> None:
-        """Parse and process a unicast DATA or ACK frame."""
+        """Parse and process a DATA, ACK, or broadcast CONTROL frame."""
         frame = MACFrame.from_bytes(frame_bytes)
 
-        if frame.destination_mac != self.mac_address:
+        if frame.destination_mac not in (
+            self.mac_address,
+            BROADCAST_MAC,
+        ):
             raise ValueError(
                 f"Node {self.name} received a frame addressed to "
                 f"{frame.destination_mac}"
@@ -154,14 +168,27 @@ class Node:
                 f"({len(frame.payload)} bytes)"
             )
 
-            # The assignment requires the ACK to contain the same sequence
-            # number as the DATA frame being acknowledged.
+            # Only unicast DATA frames require a MAC ACK.
             self.send_mac_ack(
                 destination_mac=frame.source_mac,
                 acknowledged_sequence=frame.sequence_number,
             )
             return
 
-        raise NotImplementedError(
-            "CONTROL frame processing is implemented in Part A4"
+        if frame.frame_type == FrameType.CONTROL:
+            self.received_control_payloads.append(frame.payload)
+            print(
+                f"[Node {self.name}][MAC] Extracted CONTROL payload "
+                f"({len(frame.payload)} bytes)"
+            )
+
+            if frame.destination_mac == BROADCAST_MAC:
+                print(
+                    f"[Node {self.name}][MAC] Broadcast CONTROL frame: "
+                    "no MAC ACK required"
+                )
+            return
+
+        raise ValueError(
+            f"Unsupported MAC frame type: {frame.frame_type}"
         )
