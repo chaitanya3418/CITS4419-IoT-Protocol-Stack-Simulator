@@ -23,6 +23,20 @@ class Network:
         self.nodes_by_mac = {
             node.mac_address: node for node in nodes.values()
         }
+        self.nodes_by_ipv6 = {
+            node.ipv6_address: node for node in nodes.values()
+        }
+
+    def node_name_for_ipv6(self, ipv6_address: str) -> str:
+        """Resolve an IoT node name from its configured IPv6 address."""
+        node = self.nodes_by_ipv6.get(ipv6_address)
+
+        if node is None:
+            raise ValueError(
+                f"Unknown IoT source IPv6 address: {ipv6_address}"
+            )
+
+        return node.name
 
     def transmit(self, sender: Node, frame_bytes: bytes) -> None:
         """Deliver one serialized MAC frame."""
