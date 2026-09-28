@@ -60,3 +60,21 @@ def setup_network(nodes: dict[str, Node]) -> None:
     """Call setup() for every IoT node at simulator startup."""
     for node in nodes.values():
         node.setup()
+
+
+def converge_rpl(nodes: dict[str, Node]) -> None:
+    """Start automatic RPL formation from root Node A.
+
+    The root advertises Rank 0. Each node that accepts a better route updates
+    its rank/parent and immediately rebroadcasts its own DIO, allowing the
+    fixed five-node topology to converge automatically.
+    """
+    root = nodes["A"]
+
+    if root.rank != RPL_ROOT_RANK:
+        raise ValueError("Node A must have RPL Rank 0 before convergence")
+
+    print("[RPL] Starting automatic topology formation from root Node A")
+    root.send_rpl_dio()
+
+    print("[RPL] Topology formation complete")

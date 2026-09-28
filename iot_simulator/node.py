@@ -322,6 +322,12 @@ class Node:
             f"Parent={self.parent}"
         )
 
-        # B4 deliberately stops here. B5 will rebroadcast an updated DIO
-        # automatically so the complete RPL tree can converge.
+        print(
+            f"[Node {self.name}][RPL] Rank changed; "
+            "rebroadcasting updated DIO"
+        )
+
+        # A node that accepts a better route immediately advertises its new
+        # rank. Better-route-only updates prevent endless rebroadcast loops.
+        self.send_rpl_dio()
         return True
