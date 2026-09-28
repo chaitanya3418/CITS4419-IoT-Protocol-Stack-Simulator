@@ -21,30 +21,21 @@ The project is being implemented incrementally so every protocol operation can b
 - [x] **B3 — RPL rank and preferred-parent state**
 - [x] **B4 — DIO broadcast and rank updates**
 - [x] **B5 — Full automatic RPL topology convergence**
-  - Node A starts topology formation by broadcasting Rank 0
-  - A node accepts only a strictly better candidate rank
-  - After a successful update, that node automatically rebroadcasts its DIO
-  - Better-route-only updates prevent endless DIO rebroadcast loops
-  - `main.py` now starts RPL formation automatically after setup
-- [ ] **B6 — Part B tests and demonstration**
+- [x] **B6 — Part B tests and demonstration**
+  - IPv6 35-byte header checks
+  - IPv6 serialization/parsing and payload-length validation
+  - RPL DIO 4-byte format checks
+  - RPL Type/Code validation
+  - Initial RPL state checks
+  - RPL-over-IPv6 encapsulation verification
+  - Required final tree verification
+  - Equal/worse-route rejection
+  - Confirmation that DIO broadcasts generate no MAC ACK
+  - Repeatable Part B demonstration script
 
-## Automatic RPL convergence
+## Required RPL tree
 
-The initial state is:
-
-```text
-A: Rank 0,        Parent None
-B: Rank infinity, Parent None
-C: Rank infinity, Parent None
-D: Rank infinity, Parent None
-E: Rank infinity, Parent None
-```
-
-Node A begins by broadcasting a DIO with Rank 0.
-
-B and C accept Rank 1 and rebroadcast their updated DIOs. D receives B's Rank 1 DIO and adopts Rank 2 with B as parent. E receives C's Rank 1 DIO and adopts Rank 2 with C as parent.
-
-The resulting RPL tree is:
+After automatic convergence:
 
 ```text
         A (Rank 0)
@@ -54,7 +45,7 @@ The resulting RPL tree is:
  D (Rank 2)    E (Rank 2)
 ```
 
-Final preferred-parent state:
+Final state:
 
 ```text
 A: Rank 0, Parent None
@@ -66,16 +57,32 @@ E: Rank 2, Parent C
 
 ## Run the simulator
 
+Initialize the nodes and automatically form the RPL tree:
+
 ```bash
 python main.py
 ```
 
-The program initializes all five nodes and then starts RPL topology formation automatically.
+Run the Part A demonstration:
 
-Run the existing automated tests:
+```bash
+python demo_part_a.py
+```
+
+Run the Part B demonstration:
+
+```bash
+python demo_part_b.py
+```
+
+Run all automated tests:
 
 ```bash
 python -m unittest discover -s tests -v
 ```
 
-B6 will add dedicated IPv6/RPL tests and a repeatable Part B demonstration.
+## Current status
+
+Parts A and B are now implemented in the main simulator architecture.
+
+The repository also contains the teammate-contributed standalone Part C/D implementation in `part_cd.py`. The next integration stage can connect UDP/CoAP and the security layers to the Part A/B node, IPv6, MAC and RPL routing architecture.
