@@ -16,7 +16,7 @@ from iot_simulator import (
     converge_rpl,
 )
 
-from part_cd import CoAPServer
+from iot_simulator.server import CoAPServer
 from iot_simulator.udp import serialize_udp
 
 class TestCoAPSerialization(unittest.TestCase):
@@ -163,6 +163,26 @@ class TestPartCIntegration(unittest.TestCase):
             "Temperature updated",
         )
 
+    def test_node_a_can_send_part_c_to_server(self):
+        source = self.nodes["A"]
+
+        with patch.object(
+            self.server,
+            "receive_coap",
+            wraps=self.server.receive_coap,
+        ) as receive_coap_mock:
+
+            coap_request = source.send_coap(24)
+            udp_request = source.send_udp(coap_request)
+            udp_bytes = serialize_udp(udp_request)
+
+            source.send_ipv6(
+                payload=udp_bytes,
+                destination_ipv6=self.server.ipv6_address,
+                next_header=NEXT_HEADER_UDP,
+            )
+
+        receive_coap_mock.assert_called_once()
     
 
 

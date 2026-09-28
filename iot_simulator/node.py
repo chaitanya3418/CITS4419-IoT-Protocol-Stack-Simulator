@@ -9,12 +9,32 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
-from .ipv6 import IPV6_HEADER_LENGTH, NEXT_HEADER_ICMPV6, IPv6Packet, NEXT_HEADER_UDP
 from .mac import BROADCAST_MAC, FrameType, MACFrame
 from .rpl import RPL_INFINITY, RPL_MULTICAST_IPV6, RPLDIO
 
 from .udp import serialize_udp, deserialize_udp, serialize_udp_payload
 from .coap import serialize_coap, deserialize_coap
+from .dtls import serialize_dtls, deserialize_dtls
+
+import hashlib
+import hmac
+import os
+
+from cryptography.hazmat.primitives import padding
+from cryptography.hazmat.primitives.ciphers import (
+    Cipher,
+    algorithms,
+    modes,
+)
+
+from .ipv6 import (
+    IPV6_HEADER_LENGTH,
+    NEXT_HEADER_ESP,
+    NEXT_HEADER_ICMPV6,
+    NEXT_HEADER_UDP,
+    IPv6Packet,
+)
+from .esp import deserialize_esp
 
 if TYPE_CHECKING:
     from .network import Network
@@ -35,6 +55,43 @@ class Node:
     parent: str | None = None
 
     network: Network | None = field(default=None, repr=False, compare=False)
+
+    # Part D IPsec ESP security context.
+    dtls_encryption_key: bytes = field(
+        default=b"0123456789ABCDEF",
+        repr=False,
+        compare=False,
+    )
+
+    dtls_hmac_key: bytes = field(
+        default=b"ABCDEF0123456789",
+        repr=False,
+        compare=False,
+    )
+
+    dtls_epoch: int = 1
+    dtls_sequence_number: int = 0
+
+    ipsec_encryption_key: bytes = field(
+        default=b"IPSEC-ENC-KEY-01",
+        repr=False,
+        compare=False,
+    )
+    ipsec_hmac_key: bytes = field(
+        default=b"IPSEC-HMAC-KEY1",
+        repr=False,
+        compare=False,
+    )
+
+    ipsec_spi: int = 0x00000001
+    esp_sequence_number: int = 1
+
+    received_esp_sequence_numbers: set[int] = field(
+        default_factory=set,
+        init=False,
+        repr=False,
+        compare=False,
+    )
 
     # Observable MAC state used by tests and later protocol layers.
     last_ack_sequence: int | None = field(default=None, init=False)
@@ -245,9 +302,29 @@ class Node:
         )
 
         if next_hop is None:
+            # Node A may itself be the application source.
+            # In that case there is no wireless RPL hop:
+            # send directly through A's wired interface.
+            if (
+                network.server is not None
+                and destination_ipv6
+                == network.server.ipv6_address
+            ):
+                print(
+                    f"[Node {self.name}][IPv6] "
+                    "Forwarding packet through wired interface "
+                    "to server"
+                )
+
+                network.transmit_to_server(
+                    ipv6_packet.to_bytes()
+                )
+
+                return None
+
             print(
-                f"[Node {self.name}][IPv6] Destination reached "
-                f"or ready for gateway delivery"
+                f"[Node {self.name}][IPv6] "
+                "Destination reached"
             )
             return None
 
@@ -296,6 +373,415 @@ class Node:
             destination_mac=BROADCAST_MAC,
             frame_type=FrameType.CONTROL,
         )
+
+    def send_dtls(self, coap_message):
+        """Protect a CoAP message using the simplified DTLS model."""
+
+        plaintext = serialize_coap(coap_message)
+
+        sequence_bytes = (
+            self.dtls_sequence_number.to_bytes(6, "big")
+        )
+
+        hmac_value = hmac.new(
+            self.dtls_hmac_key,
+            sequence_bytes + plaintext,
+            hashlib.sha256,
+        ).digest()
+
+        # Encrypt CoAP plaintext + HMAC together.
+        data_with_hmac = plaintext + hmac_value
+
+        iv = os.urandom(16)
+
+        padder = padding.PKCS7(128).padder()
+        padded_data = (
+            padder.update(data_with_hmac)
+            + padder.finalize()
+        )
+
+        cipher = Cipher(
+            algorithms.AES(self.dtls_encryption_key),
+            modes.CBC(iv),
+        )
+
+        encryptor = cipher.encryptor()
+
+        ciphertext = (
+            encryptor.update(padded_data)
+            + encryptor.finalize()
+        )
+
+        # Simplified DTLS Protected Data:
+        # IV || Encrypt(CoAP || HMAC)
+        protected_data = iv + ciphertext
+
+        dtls_record = {
+            "type": 23,
+            "version": 0xFEFD,
+            "epoch": self.dtls_epoch,
+            "sequence_number": self.dtls_sequence_number,
+            "length": len(protected_data),
+            "protected_data": protected_data,
+        }
+
+        print()
+        print(
+            f"[Node {self.name}][DTLS] "
+            f"Creating DTLS record"
+        )
+        print(
+            f"[Node {self.name}][DTLS] "
+            f"Sequence Number={self.dtls_sequence_number}"
+        )
+        print(
+            f"[Node {self.name}][DTLS] "
+            f"Plaintext={plaintext.hex()}"
+        )
+        print(
+            f"[Node {self.name}][DTLS] "
+            f"IV={iv.hex()}"
+        )
+        print(
+            f"[Node {self.name}][DTLS] "
+            f"Ciphertext={ciphertext.hex()}"
+        )
+        print(
+            f"[Node {self.name}][DTLS] "
+            f"HMAC={hmac_value.hex()}"
+        )
+
+        self.dtls_sequence_number += 1
+
+        return dtls_record
+
+    def send_ipsec(self, udp_datagram):
+        """Protect a complete UDP datagram using simplified ESP."""
+
+        # ESP protects UDP header + UDP payload.
+        plaintext = serialize_udp(udp_datagram)
+
+        iv = os.urandom(16)
+
+        padder = padding.PKCS7(128).padder()
+        padded_plaintext = (
+            padder.update(plaintext)
+            + padder.finalize()
+        )
+
+        cipher = Cipher(
+            algorithms.AES(self.ipsec_encryption_key),
+            modes.CBC(iv),
+        )
+
+        encryptor = cipher.encryptor()
+
+        ciphertext = (
+            encryptor.update(padded_plaintext)
+            + encryptor.finalize()
+        )
+
+        # ESP Next Header = UDP.
+        next_header = 17
+
+        spi_bytes = self.ipsec_spi.to_bytes(4, "big")
+        sequence_bytes = (
+            self.esp_sequence_number.to_bytes(4, "big")
+        )
+        next_header_bytes = next_header.to_bytes(1, "big")
+
+        authenticated_data = (
+            spi_bytes
+            + sequence_bytes
+            + iv
+            + ciphertext
+            + next_header_bytes
+        )
+
+        hmac_value = hmac.new(
+            self.ipsec_hmac_key,
+            authenticated_data,
+            hashlib.sha256,
+        ).digest()
+
+        esp_packet = {
+            "spi": self.ipsec_spi,
+            "sequence_number": self.esp_sequence_number,
+            "iv": iv,
+            "encrypted_payload": ciphertext,
+            "next_header": next_header,
+            "authentication_data": hmac_value,
+        }
+
+        print()
+        print(
+            f"[Node {self.name}][IPsec ESP] "
+            "Creating ESP packet"
+        )
+        print(
+            f"[Node {self.name}][IPsec ESP] "
+            f"SPI=0x{self.ipsec_spi:08X}"
+        )
+        print(
+            f"[Node {self.name}][IPsec ESP] "
+            f"Sequence Number={self.esp_sequence_number}"
+        )
+        print(
+            f"[Node {self.name}][IPsec ESP] "
+            f"Plaintext={plaintext.hex()}"
+        )
+        print(
+            f"[Node {self.name}][IPsec ESP] "
+            f"IV={iv.hex()}"
+        )
+        print(
+            f"[Node {self.name}][IPsec ESP] "
+            f"Ciphertext={ciphertext.hex()}"
+        )
+        print(
+            f"[Node {self.name}][IPsec ESP] "
+            f"Next Header={next_header}"
+        )
+        print(
+            f"[Node {self.name}][IPsec ESP] "
+            f"HMAC={hmac_value.hex()}"
+        )
+
+        self.esp_sequence_number += 1
+
+        return esp_packet
+
+    def receive_ipsec(self, esp_packet):
+        """Verify and decrypt a simplified ESP packet."""
+
+        print()
+        print(
+            f"[Node {self.name}][IPsec ESP] "
+            "Received ESP packet"
+        )
+        print(
+            f"[Node {self.name}][IPsec ESP] "
+            f"SPI=0x{esp_packet['spi']:08X}"
+        )
+        print(
+            f"[Node {self.name}][IPsec ESP] "
+            f"Sequence Number="
+            f"{esp_packet['sequence_number']}"
+        )
+
+        if esp_packet["spi"] != self.ipsec_spi:
+            print(
+                f"[Node {self.name}][IPsec ESP] "
+                "Invalid SPI - packet rejected"
+            )
+            return None
+
+        sequence_number = esp_packet["sequence_number"]
+        iv = esp_packet["iv"]
+        ciphertext = esp_packet["encrypted_payload"]
+        next_header = esp_packet["next_header"]
+        received_hmac = esp_packet["authentication_data"]
+
+        authenticated_data = (
+            esp_packet["spi"].to_bytes(4, "big")
+            + sequence_number.to_bytes(4, "big")
+            + iv
+            + ciphertext
+            + next_header.to_bytes(1, "big")
+        )
+
+        expected_hmac = hmac.new(
+            self.ipsec_hmac_key,
+            authenticated_data,
+            hashlib.sha256,
+        ).digest()
+
+        if not hmac.compare_digest(
+            received_hmac,
+            expected_hmac,
+        ):
+            print(
+                f"[Node {self.name}][IPsec ESP] "
+                "HMAC Verification=FAILED"
+            )
+            return None
+
+        print(
+            f"[Node {self.name}][IPsec ESP] "
+            "HMAC Verification=SUCCESS"
+        )
+
+        # Simplified replay protection.
+        if (
+            sequence_number
+            in self.received_esp_sequence_numbers
+        ):
+            print(
+                f"[Node {self.name}][IPsec ESP] "
+                "Replay Check=FAILED "
+                f"(Sequence Number {sequence_number} "
+                "already received)"
+            )
+            return None
+
+        print(
+            f"[Node {self.name}][IPsec ESP] "
+            "Replay Check=SUCCESS"
+        )
+
+        if next_header != 17:
+            print(
+                f"[Node {self.name}][IPsec ESP] "
+                f"Unexpected Next Header={next_header}"
+            )
+            return None
+
+        cipher = Cipher(
+            algorithms.AES(self.ipsec_encryption_key),
+            modes.CBC(iv),
+        )
+
+        decryptor = cipher.decryptor()
+
+        padded_plaintext = (
+            decryptor.update(ciphertext)
+            + decryptor.finalize()
+        )
+
+        unpadder = padding.PKCS7(128).unpadder()
+
+        plaintext = (
+            unpadder.update(padded_plaintext)
+            + unpadder.finalize()
+        )
+
+        print(
+            f"[Node {self.name}][IPsec ESP] "
+            f"Decrypted Plaintext={plaintext.hex()}"
+        )
+
+        # Only accept the sequence number after integrity
+        # and decryption have succeeded.
+        self.received_esp_sequence_numbers.add(
+            sequence_number
+        )
+
+        print(
+            f"[Node {self.name}][IPsec ESP] "
+            "ESP Next Header=17 (UDP)"
+        )
+        print(
+            f"[Node {self.name}][IPsec ESP] "
+            "Passing decrypted payload to UDP"
+        )
+
+        # Part D UDP payload is a DTLS record.
+        return deserialize_udp(
+            plaintext,
+            secure=True,
+        )
+
+    def receive_dtls(self, dtls_record):
+        """Decrypt and verify a simplified DTLS record."""
+
+        print()
+        print(
+            f"[Node {self.name}][DTLS] "
+            f"Received DTLS record"
+        )
+        print(
+            f"[Node {self.name}][DTLS] "
+            f"Sequence Number="
+            f"{dtls_record['sequence_number']}"
+        )
+
+        protected_data = dtls_record["protected_data"]
+
+        if len(protected_data) < 16:
+            print(
+                f"[Node {self.name}][DTLS] "
+                "Invalid protected data"
+            )
+            return None
+
+        iv = protected_data[:16]
+        ciphertext = protected_data[16:]
+
+        print(
+            f"[Node {self.name}][DTLS] "
+            f"Received Ciphertext={ciphertext.hex()}"
+        )
+
+        cipher = Cipher(
+            algorithms.AES(self.dtls_encryption_key),
+            modes.CBC(iv),
+        )
+
+        decryptor = cipher.decryptor()
+
+        padded_data = (
+            decryptor.update(ciphertext)
+            + decryptor.finalize()
+        )
+
+        unpadder = padding.PKCS7(128).unpadder()
+
+        data_with_hmac = (
+            unpadder.update(padded_data)
+            + unpadder.finalize()
+        )
+
+        if len(data_with_hmac) < 32:
+            print(
+                f"[Node {self.name}][DTLS] "
+                "Invalid protected data"
+            )
+            return None
+
+        plaintext = data_with_hmac[:-32]
+        received_hmac = data_with_hmac[-32:]
+
+        print(
+            f"[Node {self.name}][DTLS] "
+            f"Decrypted Plaintext={plaintext.hex()}"
+        )
+
+        sequence_bytes = (
+            dtls_record["sequence_number"].to_bytes(
+                6,
+                "big",
+            )
+        )
+
+        expected_hmac = hmac.new(
+            self.dtls_hmac_key,
+            sequence_bytes + plaintext,
+            hashlib.sha256,
+        ).digest()
+
+        if not hmac.compare_digest(
+            received_hmac,
+            expected_hmac,
+        ):
+            print(
+                f"[Node {self.name}][DTLS] "
+                "HMAC Verification=FAILED"
+            )
+            return None
+
+        print(
+            f"[Node {self.name}][DTLS] "
+            "HMAC Verification=SUCCESS"
+        )
+
+        coap_message = deserialize_coap(plaintext)
+
+        print(
+            f"[Node {self.name}][DTLS] "
+            "Passing plaintext to CoAP"
+        )
+
+        return coap_message
 
     def receive_mac(self, frame_bytes: bytes) -> None:
         """Parse and process a DATA, ACK, or broadcast CONTROL frame."""
@@ -435,6 +921,29 @@ class Node:
             )
             return
 
+        if packet.next_header == NEXT_HEADER_ESP:
+            print(
+                f"[Node {self.name}][IPv6] "
+                "Passing payload to IPsec ESP"
+            )
+
+            esp_packet = deserialize_esp(
+                packet.payload
+            )
+
+            udp_datagram = self.receive_ipsec(
+                esp_packet
+            )
+
+            if udp_datagram is None:
+                return
+
+            self.receive_udp(
+                udp_datagram,
+                secure=True,
+            )
+            return
+
         if packet.next_header == NEXT_HEADER_UDP:
 
             print(
@@ -518,7 +1027,7 @@ class Node:
         self.send_rpl_dio()
         return True
 
-    def receive_udp(self, udp_datagram):
+    def receive_udp(self, udp_datagram, secure=False):
         """Process a UDP datagram delivered to this IoT node."""
 
         print()
@@ -538,15 +1047,35 @@ class Node:
 
         if udp_datagram["destination_port"] != 50000:
             print(
-                f"[Node {self.name}][UDP] Datagram is not for this client"
+                f"[Node {self.name}][UDP] "
+                "Datagram is not for this client"
             )
             return
 
+        if secure:
+            print(
+                f"[Node {self.name}][UDP] "
+                "Passing payload to DTLS"
+            )
+
+            coap_message = self.receive_dtls(
+                udp_datagram["payload"]
+            )
+
+            if coap_message is None:
+                return
+
+            self.receive_coap(coap_message)
+            return
+
         print(
-            f"[Node {self.name}][UDP] Passing payload to CoAP"
+            f"[Node {self.name}][UDP] "
+            "Passing payload to CoAP"
         )
 
-        self.receive_coap(udp_datagram["payload"])
+        self.receive_coap(
+            udp_datagram["payload"]
+        )
 
 
     def receive_coap(self, coap_message):
