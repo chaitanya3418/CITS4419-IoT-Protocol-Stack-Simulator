@@ -20,61 +20,62 @@ The project is being implemented incrementally so every protocol operation can b
 - [x] **B2 — ICMPv6 RPL DIO message format**
 - [x] **B3 — RPL rank and preferred-parent state**
 - [x] **B4 — DIO broadcast and rank updates**
-  - DIO encapsulation: RPL → IPv6 → MAC CONTROL
-  - IPv6 Next Header = 58 for ICMPv6/RPL
-  - MAC destination = `FF:FF:FF:FF`
-  - One-hop neighbors parse the IPv6 packet and DIO
-  - Candidate rank = advertised rank + 1
-  - Rank/parent change only when the candidate route is better
-  - No automatic DIO rebroadcast yet
-- [ ] **B5 — Full RPL topology convergence**
+- [x] **B5 — Full automatic RPL topology convergence**
+  - Node A starts topology formation by broadcasting Rank 0
+  - A node accepts only a strictly better candidate rank
+  - After a successful update, that node automatically rebroadcasts its DIO
+  - Better-route-only updates prevent endless DIO rebroadcast loops
+  - `main.py` now starts RPL formation automatically after setup
 - [ ] **B6 — Part B tests and demonstration**
 
-## B4 DIO Flow
+## Automatic RPL convergence
 
-A node with a finite rank can call `send_rpl_dio()`.
-
-For example, Node A begins at Rank 0 and broadcasts:
+The initial state is:
 
 ```text
-RPL DIO (Rank 0)
-        ↓
-IPv6 (Next Header 58)
-        ↓
-MAC CONTROL (FF:FF:FF:FF)
-        ↓
-     B and C
+A: Rank 0,        Parent None
+B: Rank infinity, Parent None
+C: Rank infinity, Parent None
+D: Rank infinity, Parent None
+E: Rank infinity, Parent None
 ```
 
-Nodes B and C calculate:
+Node A begins by broadcasting a DIO with Rank 0.
+
+B and C accept Rank 1 and rebroadcast their updated DIOs. D receives B's Rank 1 DIO and adopts Rank 2 with B as parent. E receives C's Rank 1 DIO and adopts Rank 2 with C as parent.
+
+The resulting RPL tree is:
 
 ```text
-Candidate Rank = advertised Rank + 1
-               = 0 + 1
-               = 1
+        A (Rank 0)
+       /          \
+ B (Rank 1)    C (Rank 1)
+    |              |
+ D (Rank 2)    E (Rank 2)
 ```
 
-Because Rank 1 is better than their initial infinite rank, they update to:
+Final preferred-parent state:
 
 ```text
-B: Rank=1, Parent=A
-C: Rank=1, Parent=A
+A: Rank 0, Parent None
+B: Rank 1, Parent A
+C: Rank 1, Parent A
+D: Rank 2, Parent B
+E: Rank 2, Parent C
 ```
 
-Nodes D and E remain at infinity in B4 because B and C do not automatically rebroadcast their updated DIOs yet. That automatic propagation is intentionally reserved for B5.
-
-## IPv6 multicast design choice
-
-The assignment specifies MAC broadcast for RPL DIOs but does not specify the simplified IPv6 destination address. This simulator uses `ff02::1a` as the RPL multicast destination, while the MAC destination remains the assignment-required `FF:FF:FF:FF`.
-
-## Run the current simulator
+## Run the simulator
 
 ```bash
 python main.py
 ```
 
-Run the existing tests:
+The program initializes all five nodes and then starts RPL topology formation automatically.
+
+Run the existing automated tests:
 
 ```bash
 python -m unittest discover -s tests -v
 ```
+
+B6 will add dedicated IPv6/RPL tests and a repeatable Part B demonstration.

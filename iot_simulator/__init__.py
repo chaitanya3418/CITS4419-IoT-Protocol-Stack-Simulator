@@ -19,7 +19,7 @@ from .rpl import (
     RPL_ROOT_RANK,
     RPLDIO,
 )
-from .topology import build_iot_network, setup_network
+from .topology import build_iot_network, converge_rpl, setup_network
 
 __all__ = [
     "BROADCAST_MAC",
