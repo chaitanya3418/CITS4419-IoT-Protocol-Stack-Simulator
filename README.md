@@ -20,25 +20,46 @@ The project is being implemented incrementally so every protocol operation can b
   - Binary serialization and parsing
 - [x] **A3 — Unicast DATA frames and MAC ACKs**
   - Direct one-hop unicast delivery
-  - Per-node DATA sequence-number progression
-  - DATA frame parsing and payload extraction
-  - Receiver automatically returns a MAC ACK
+  - Per-node sequence-number progression
+  - Receiver automatically returns the required ACK
   - ACK carries the same sequence number as the DATA frame
-  - Sender parses and records the returned ACK
 - [x] **A4 — Broadcast CONTROL frames**
-  - Uses broadcast MAC address `FF:FF:FF:FF`
-  - Broadcast is delivered to every one-hop neighbor
-  - CONTROL payload is extracted and stored by receivers
-  - Broadcast frames do not generate MAC acknowledgements
-  - Provides the MAC behavior needed for RPL DIO broadcasts in Part B
-- [ ] **A5 — Part A tests and demonstration**
+  - Broadcast address `FF:FF:FF:FF`
+  - Delivery to all one-hop neighbors
+  - No MAC acknowledgements for broadcasts
+  - CONTROL payload handling ready for RPL DIOs
+- [x] **A5 — Part A tests and demonstration**
+  - Exact topology/address checks
+  - MAC 12-byte header and serialization checks
+  - Payload-length validation
+  - Unicast DATA/ACK tests
+  - Sequence-number progression tests
+  - Non-neighbor delivery rejection
+  - Broadcast CONTROL/no-ACK tests
+  - Repeatable Part A demonstration script
 
-## Current run
+## Run the current simulator
+
+Initialize the five IoT nodes:
 
 ```bash
 python main.py
 ```
 
-At the end of Part A4, the MAC layer supports both one-hop unicast DATA/ACK communication and one-hop broadcast CONTROL delivery.
+Run the complete Part A demonstration:
 
-Part A5 will add the repeatable Part A demonstration and automated tests.
+```bash
+python demo_part_a.py
+```
+
+Run the automated Part A tests:
+
+```bash
+python -m unittest discover -s tests -v
+```
+
+## Part A status
+
+Part A is now complete. The MAC layer demonstrates the simplified IEEE 802.15.4 behavior required by the assignment: node addressing, per-node sequence numbers, frame construction/parsing, one-hop unicast DATA with ACKs, and one-hop broadcast CONTROL without ACKs.
+
+The next development stage is Part B: simplified IPv6 and RPL topology construction.
