@@ -119,9 +119,11 @@ def deserialize_udp(data):
     }
 
 # TODO(INTEGRATION):
-# Temporary Node with mockdata scaffold for standalone Part C/D development.
-# Replace/merge this with the full Node class from Parts A/B,
-# which will provide MAC, IPv6, RPL and routing functionality.
+# This Node is a temporary upper-layer scaffold for standalone Part C/D testing.
+# The current implementation handles CoAP, UDP, DTLS and IPsec ESP only.
+# Once the Part A MAC layer and Part B IPv6/RPL routing are available,
+# the selected node's MAC address and hop-by-hop forwarding should be
+# integrated into the complete protocol-stack path.
 class Node:
     def __init__(self, name, ipv6_address):
         self.name = name
