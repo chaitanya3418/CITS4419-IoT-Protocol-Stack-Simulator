@@ -1,8 +1,8 @@
-"""One-hop wireless delivery model for Part A3.
+"""One-hop wireless delivery model for the IoT simulator.
 
 The project specification says to ignore collisions, interference, channel
-contention and CSMA/CA. Therefore a transmitted unicast MAC frame is delivered
-directly to the addressed one-hop neighbor.
+contention and CSMA/CA. A transmitted frame is therefore delivered directly
+to the appropriate one-hop neighbor or neighbors.
 """
 
 from __future__ import annotations
@@ -16,7 +16,7 @@ if TYPE_CHECKING:
 
 
 class Network:
-    """Deliver unicast MAC frames between one-hop neighbors."""
+    """Deliver MAC frames between one-hop neighbors."""
 
     def __init__(self, nodes: dict[str, Node]) -> None:
         self.nodes = nodes
@@ -25,7 +25,7 @@ class Network:
         }
 
     def transmit(self, sender: Node, frame_bytes: bytes) -> None:
-        """Deliver one serialized unicast MAC frame."""
+        """Deliver one serialized MAC frame."""
         frame = MACFrame.from_bytes(frame_bytes)
 
         if frame.source_mac != sender.mac_address:
@@ -34,9 +34,8 @@ class Network:
             )
 
         if frame.destination_mac == BROADCAST_MAC:
-            raise NotImplementedError(
-                "Broadcast delivery is implemented in Part A4"
-            )
+            self._broadcast(sender, frame_bytes)
+            return
 
         receiver = self.nodes_by_mac.get(frame.destination_mac)
 
@@ -57,3 +56,24 @@ class Network:
         )
 
         receiver.receive_mac(frame_bytes)
+
+    def _broadcast(
+        self,
+        sender: Node,
+        frame_bytes: bytes,
+    ) -> None:
+        """Deliver a broadcast frame to all one-hop neighbors."""
+        print(
+            f"[Network][MAC] Broadcast from Node {sender.name} "
+            f"to one-hop neighbors={sender.neighbors}"
+        )
+
+        for neighbor_name in sender.neighbors:
+            receiver = self.nodes[neighbor_name]
+
+            print(
+                f"[Network][MAC] Broadcast delivery: "
+                f"Node {sender.name} -> Node {receiver.name}"
+            )
+
+            receiver.receive_mac(frame_bytes)
