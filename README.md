@@ -24,7 +24,12 @@ The project is being implemented incrementally so every protocol operation can b
   - Variable-length payload
   - Binary serialization and parsing
   - Next Header constants for UDP (17), ESP (50), ICMPv6/RPL (58), and No Next Header (59)
-- [ ] **B2 — ICMPv6 RPL DIO message format**
+- [x] **B2 — ICMPv6 RPL DIO message format**
+  - Type = 155
+  - Code = 1 for DIO
+  - Rank = 2 bytes
+  - Exact 4-byte binary DIO representation
+  - Serialization and parsing with field validation
 - [ ] **B3 — RPL rank and preferred-parent state**
 - [ ] **B4 — DIO broadcast and rank updates**
 - [ ] **B5 — Full RPL topology convergence**
@@ -54,4 +59,4 @@ python -m unittest discover -s tests -v
 
 Part A is complete.
 
-Part B1 now provides the simplified IPv6 packet structure required for later RPL, UDP, and ESP encapsulation. RPL DIO processing is intentionally deferred to B2 and later sub-parts.
+Part B1 provides the simplified IPv6 packet structure. Part B2 now provides the simplified ICMPv6 RPL DIO binary message format. Node rank state, parent selection, and DIO propagation are intentionally deferred to B3 and later sub-parts.
