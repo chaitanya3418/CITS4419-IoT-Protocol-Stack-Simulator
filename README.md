@@ -14,7 +14,15 @@ The project is being implemented incrementally so every protocol operation can b
   - One-hop neighbor lists
   - Per-node MAC sequence number initialized to 0
   - `setup()` initialization logging
-- [ ] **A2 — Simplified MAC frame format and serialization**
+- [x] **A2 — Simplified MAC frame format and serialization**
+  - Source MAC Address — 4 bytes
+  - Destination MAC Address — 4 bytes
+  - Sequence Number — 1 byte
+  - Frame Type — 1 byte
+  - Payload Length — 2 bytes
+  - Variable-length payload
+  - DATA=1, ACK=2, CONTROL=3
+  - Binary serialization and parsing
 - [ ] **A3 — Unicast DATA frames and MAC ACKs**
 - [ ] **A4 — Broadcast CONTROL frames**
 - [ ] **A5 — Part A tests and demonstration**
