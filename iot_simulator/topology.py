@@ -1,5 +1,6 @@
 """Static network topology required by CITS4419 Project Part A."""
 
+from .network import Network
 from .node import Node
 
 
@@ -33,8 +34,8 @@ NODE_CONFIG = {
 
 
 def build_iot_network() -> dict[str, Node]:
-    """Create nodes A-E using the exact addresses and neighbors in the brief."""
-    return {
+    """Create nodes A-E and attach them to the simulated wireless network."""
+    nodes = {
         name: Node(
             name=name,
             mac_address=config["mac_address"],
@@ -43,6 +44,13 @@ def build_iot_network() -> dict[str, Node]:
         )
         for name, config in NODE_CONFIG.items()
     }
+
+    network = Network(nodes)
+
+    for node in nodes.values():
+        node.network = network
+
+    return nodes
 
 
 def setup_network(nodes: dict[str, Node]) -> None:
