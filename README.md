@@ -15,15 +15,16 @@ The project is being implemented incrementally so every protocol operation can b
   - Per-node MAC sequence number initialized to 0
   - `setup()` initialization logging
 - [x] **A2 — Simplified MAC frame format and serialization**
-  - Source MAC Address — 4 bytes
-  - Destination MAC Address — 4 bytes
-  - Sequence Number — 1 byte
-  - Frame Type — 1 byte
-  - Payload Length — 2 bytes
-  - Variable-length payload
+  - Exact 12-byte fixed header
   - DATA=1, ACK=2, CONTROL=3
   - Binary serialization and parsing
-- [ ] **A3 — Unicast DATA frames and MAC ACKs**
+- [x] **A3 — Unicast DATA frames and MAC ACKs**
+  - Direct one-hop unicast delivery
+  - Per-node DATA sequence-number progression
+  - DATA frame parsing and payload extraction
+  - Receiver automatically returns a MAC ACK
+  - ACK carries the same sequence number as the DATA frame
+  - Sender parses and records the returned ACK
 - [ ] **A4 — Broadcast CONTROL frames**
 - [ ] **A5 — Part A tests and demonstration**
 
@@ -33,11 +34,6 @@ The project is being implemented incrementally so every protocol operation can b
 python main.py
 ```
 
-Expected initialization output begins with:
+At the end of Part A3, the MAC layer can deliver a unicast DATA frame between directly connected neighbors and automatically return the required MAC ACK.
 
-```text
-[Node A][SETUP] Initialized: MAC=00:00:00:01, IPv6=fd00::1
-[Node B][SETUP] Initialized: MAC=00:00:00:02, IPv6=fd00::2
-```
-
-Protocol functionality is intentionally added one sub-part at a time.
+Broadcast CONTROL delivery is intentionally left for Part A4 so each protocol feature remains in a separate pull request.
