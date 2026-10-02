@@ -1,4 +1,4 @@
-"""Integration tests for CITS4419 Project Part C."""
+"""Integration tests for unsecured UDP and CoAP communication."""
 
 import io
 import unittest
@@ -20,7 +20,7 @@ from iot_simulator.server import CoAPServer
 from iot_simulator.udp import serialize_udp
 
 class TestCoAPSerialization(unittest.TestCase):
-    """Check the Part C binary CoAP representation."""
+    """Check the binary CoAP representation used by unsecured traffic."""
 
     def test_coap_request_binary_round_trip(self) -> None:
         message = {
@@ -77,12 +77,12 @@ class TestCoAPSerialization(unittest.TestCase):
         self.assertEqual(encoded[1], 0x44)
 
 class TestPartCIntegration(unittest.TestCase):
-    """Check the Part C CoAP/UDP/IPv6/RPL/MAC integration."""
+    """Check end-to-end CoAP/UDP/IPv6/RPL/MAC integration."""
 
     def setUp(self) -> None:
         self.nodes = build_iot_network()
 
-        # Suppress the long RPL convergence log during automated tests.
+        # Suppress verbose topology-convergence output during automated tests.
         with redirect_stdout(io.StringIO()):
             converge_rpl(self.nodes)
 
@@ -185,7 +185,7 @@ class TestPartCIntegration(unittest.TestCase):
         receive_coap_mock.assert_called_once()
     
     def test_all_source_nodes_can_complete_part_c_round_trip(self) -> None:
-        """Every selectable source A-E should complete a Part C request/response."""
+        """Every selectable source A-E should complete an unsecured request/response."""
 
         for source_name in ("A", "B", "C", "D", "E"):
             with self.subTest(source=source_name):

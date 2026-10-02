@@ -36,6 +36,8 @@ NODE_CONFIG = {
 
 def build_iot_network() -> dict[str, Node]:
     """Create nodes A-E with their initial MAC and RPL state."""
+    # Node A starts as the RPL root; every other node begins with an
+    # infinite rank and no preferred parent.
     nodes = {
         name: Node(
             name=name,
@@ -69,6 +71,7 @@ def converge_rpl(nodes: dict[str, Node]) -> None:
     its rank/parent and immediately rebroadcasts its own DIO, allowing the
     fixed five-node topology to converge automatically.
     """
+    # Start topology formation by broadcasting the root's Rank-0 DIO.
     root = nodes["A"]
 
     if root.rank != RPL_ROOT_RANK:

@@ -13,7 +13,7 @@ VALUE_TO_TYPE = {
     for name, value in TYPE_TO_VALUE.items()
 }
 
-# CoAP codes used by this project.
+# CoAP codes supported by the simulator.
 #
 # POST = 0.02
 # 2.04 Changed = class 2, detail 04
@@ -68,7 +68,7 @@ def serialize_coap(coap_message):
 
     encoded = header + token
 
-    # This project only requires Uri-Path=/temperature.
+    # Extract the Uri-Path option so it can be encoded in the options section.
     uri_path = coap_message.get(
         "options",
         {},
@@ -80,8 +80,8 @@ def serialize_coap(coap_message):
         option_delta = URI_PATH_OPTION
         option_length = len(option_value)
 
-        # The project only needs one short Uri-Path option, so the
-        # simple 4-bit delta/length representation is sufficient.
+        # Encode the supported Uri-Path using the compact 4-bit delta and
+        # length fields.
         if option_delta >= 13 or option_length >= 13:
             raise ValueError(
                 "Extended CoAP option encoding is not implemented"
@@ -143,7 +143,7 @@ def deserialize_coap(data):
 
     options = {}
 
-    # Parse the one Uri-Path option required by the project.
+    # Decode the Uri-Path option when an option appears before the payload.
     if (
         index < len(data)
         and data[index] != PAYLOAD_MARKER

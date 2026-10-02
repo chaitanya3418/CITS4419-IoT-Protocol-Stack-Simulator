@@ -1,4 +1,4 @@
-"""Automated checks for CITS4419 Project Part B."""
+"""Automated checks for IPv6 framing and RPL topology formation."""
 
 import unittest
 

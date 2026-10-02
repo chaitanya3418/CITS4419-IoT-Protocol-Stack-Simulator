@@ -76,29 +76,29 @@ def run_part_d(source, server) -> None:
     print("PART D: DTLS + IPsec ESP")
     print("=" * 72)
 
-    # CoAP -> DTLS
+    # Protect the CoAP message with DTLS.
     coap_request = source.send_coap(24)
 
     dtls_request = source.send_dtls(
         coap_request
     )
 
-    # DTLS -> UDP
+    # Encapsulate the DTLS record in UDP.
     udp_request = source.send_udp(
         dtls_request
     )
 
-    # UDP -> ESP
+    # Protect the complete UDP datagram with ESP.
     esp_request = source.send_ipsec(
         udp_request
     )
 
-    # ESP dict -> binary IPv6 payload
+    # Serialize the ESP packet before placing it in IPv6.
     esp_bytes = serialize_esp(
         esp_request
     )
 
-    # IPv6 Next Header = 50 (ESP)
+    # Next Header 50 tells IPv6 that its payload is ESP.
     source.send_ipv6(
         payload=esp_bytes,
         destination_ipv6=server.ipv6_address,
@@ -109,10 +109,10 @@ def run_part_d(source, server) -> None:
 def main() -> None:
     """Initialize the network and run the selected demonstration."""
 
-    # Create nodes A-E.
+    # Create the five IoT nodes and their fixed neighbour relationships.
     nodes = build_iot_network()
 
-    # Print configured node information.
+    # Display the configured addresses and initial routing state.
     setup_network(nodes)
 
     print()
@@ -120,10 +120,10 @@ def main() -> None:
     print("AUTOMATIC RPL TOPOLOGY FORMATION")
     print("=" * 72)
 
-    # Automatically create the RPL topology.
+    # Form the RPL routing tree before application traffic begins.
     converge_rpl(nodes)
 
-    # Create and attach the wired CoAP server.
+    # Attach the CoAP server to Node A's wired side.
     server = CoAPServer()
 
     nodes["A"].network.attach_server(
