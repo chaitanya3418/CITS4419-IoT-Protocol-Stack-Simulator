@@ -404,6 +404,61 @@ class TestPartDNetworkIntegration(unittest.TestCase):
             response["payload"],
             "Temperature updated",
         )
+    def test_all_source_nodes_can_complete_secure_round_trip(self):
+        """Every selectable source A-E should complete a secure Part D exchange."""
+
+        for source_name in ("A", "B", "C", "D", "E"):
+            with self.subTest(source=source_name):
+                # A fresh server is important here because ESP sequence numbers
+                # start at 1 for each node and the server performs replay checks.
+                nodes = build_iot_network()
+                with redirect_stdout(io.StringIO()):
+                    converge_rpl(nodes)
+
+                server = CoAPServer()
+                nodes["A"].network.attach_server(server)
+                source = nodes[source_name]
+
+                with patch.object(
+                    server,
+                    "receive_coap",
+                    wraps=server.receive_coap,
+                ) as server_receive_mock, patch.object(
+                    source,
+                    "receive_coap",
+                    wraps=source.receive_coap,
+                ) as source_receive_mock:
+
+                    with redirect_stdout(io.StringIO()):
+                        coap_request = source.send_coap(24)
+                        dtls_request = source.send_dtls(coap_request)
+                        udp_request = source.send_udp(dtls_request)
+                        esp_request = source.send_ipsec(udp_request)
+                        esp_bytes = serialize_esp(esp_request)
+
+                        source.send_ipv6(
+                            payload=esp_bytes,
+                            destination_ipv6=server.ipv6_address,
+                            next_header=NEXT_HEADER_ESP,
+                        )
+
+                server_receive_mock.assert_called_once()
+                source_receive_mock.assert_called_once()
+
+                request = server_receive_mock.call_args.args[0]
+                response = source_receive_mock.call_args.args[0]
+
+                self.assertEqual(request["type"], "CON")
+                self.assertEqual(request["code"], "POST")
+                self.assertEqual(request["options"]["Uri-Path"], "temperature")
+                self.assertEqual(request["payload"], "Temperature=24°C")
+
+                self.assertEqual(response["type"], "ACK")
+                self.assertEqual(response["code"], "2.04 Changed")
+                self.assertEqual(response["message_id"], 1001)
+                self.assertEqual(response["token"], b"\x01\x02")
+                self.assertEqual(response["payload"], "Temperature updated")
+
 
 
 if __name__ == "__main__":

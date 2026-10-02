@@ -184,6 +184,60 @@ class TestPartCIntegration(unittest.TestCase):
 
         receive_coap_mock.assert_called_once()
     
+    def test_all_source_nodes_can_complete_part_c_round_trip(self) -> None:
+        """Every selectable source A-E should complete a Part C request/response."""
+
+        for source_name in ("A", "B", "C", "D", "E"):
+            with self.subTest(source=source_name):
+                # Use a fresh network/server for each source so every subtest is
+                # independent of MAC sequence numbers and other mutable state.
+                nodes = build_iot_network()
+                with redirect_stdout(io.StringIO()):
+                    converge_rpl(nodes)
+
+                server = CoAPServer()
+                nodes["A"].network.attach_server(server)
+                source = nodes[source_name]
+
+                # Monitor receive_coap() to verify that the response returns to the source node correctly.
+                with patch.object(
+                    server,
+                    "receive_coap",
+                    wraps=server.receive_coap,
+                ) as server_receive_mock, patch.object(
+                    source,
+                    "receive_coap",
+                    wraps=source.receive_coap,
+                ) as source_receive_mock:
+
+                    with redirect_stdout(io.StringIO()):
+                        coap_request = source.send_coap(24)
+                        udp_request = source.send_udp(coap_request)
+                        udp_bytes = serialize_udp(udp_request)
+
+                        source.send_ipv6(
+                            payload=udp_bytes,
+                            destination_ipv6=server.ipv6_address,
+                            next_header=NEXT_HEADER_UDP,
+                        )
+
+                server_receive_mock.assert_called_once()
+                source_receive_mock.assert_called_once()
+
+                request = server_receive_mock.call_args.args[0]
+                response = source_receive_mock.call_args.args[0]
+
+                self.assertEqual(request["type"], "CON")
+                self.assertEqual(request["code"], "POST")
+                self.assertEqual(request["options"]["Uri-Path"], "temperature")
+                self.assertEqual(request["payload"], "Temperature=24°C")
+
+                self.assertEqual(response["type"], "ACK")
+                self.assertEqual(response["code"], "2.04 Changed")
+                self.assertEqual(response["message_id"], 1001)
+                self.assertEqual(response["token"], b"\x01\x02")
+                self.assertEqual(response["payload"], "Temperature updated")
+
 
 
 if __name__ == "__main__":
