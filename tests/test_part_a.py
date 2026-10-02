@@ -1,4 +1,4 @@
-"""Automated checks for CITS4419 Project Part A."""
+"""Automated checks for MAC framing and link-layer behaviour."""
 
 import unittest
 

@@ -1,4 +1,4 @@
-"""Simplified IPv6 packet format required by CITS4419 Part B.
+"""Simplified IPv6 packet representation used by the simulator.
 
 The assignment uses a teaching-oriented IPv6 header containing:
     Source IPv6 Address      16 bytes
@@ -15,7 +15,7 @@ import struct
 
 IPV6_HEADER_LENGTH = 35
 
-# Next Header values required later by the project.
+# Next Header values used to dispatch payloads to upper-layer protocols.
 NEXT_HEADER_UDP = 17
 NEXT_HEADER_ESP = 50
 NEXT_HEADER_ICMPV6 = 58

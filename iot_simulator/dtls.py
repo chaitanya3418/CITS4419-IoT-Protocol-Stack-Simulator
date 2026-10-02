@@ -1,5 +1,11 @@
+"""Serialize and parse the simplified DTLS record format."""
+
+DTLS_HEADER_LENGTH = 13
+
+
 def deserialize_dtls(data):
-    if len(data) < 13:
+    # The fixed header contains Type, Version, Epoch, Sequence Number and Length.
+    if len(data) < DTLS_HEADER_LENGTH:
         raise ValueError("DTLS record is too short")
 
     record_type = data[0]
@@ -8,7 +14,8 @@ def deserialize_dtls(data):
     sequence_number = int.from_bytes(data[5:11], "big")
     length = int.from_bytes(data[11:13], "big")
 
-    protected_data = data[13:13 + length]
+    # Protected Data begins immediately after the fixed DTLS header.
+    protected_data = data[DTLS_HEADER_LENGTH:DTLS_HEADER_LENGTH + length]
 
     if len(protected_data) != length:
         raise ValueError("Invalid DTLS protected-data length")

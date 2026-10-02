@@ -1,4 +1,4 @@
-"""Simplified ICMPv6 RPL structures and state for CITS4419 Part B.
+"""Simplified ICMPv6 RPL structures and routing state.
 
 The assignment defines a teaching-oriented RPL DIO structure containing:
     Type   1 byte  (155)
@@ -16,14 +16,12 @@ RPL_DIO_LENGTH = 4
 
 RPL_ROOT_RANK = 0
 
-# The project states that non-root nodes begin at "infinity".
-# Because the transmitted Rank field is two bytes, 0xFFFF is used as the
-# simulator's explicit two-byte sentinel for an unknown/infinite rank.
+# Non-root nodes begin with an unknown rank. Because Rank is encoded in
+# two bytes, 0xFFFF is used as the sentinel value for an infinite rank.
 RPL_INFINITY = 0xFFFF
 
-# The project requires DIOs to be broadcast through the MAC layer but does
-# not prescribe an IPv6 destination for the simplified packet. The simulator
-# uses the standard link-local RPL multicast group as its documented choice.
+# DIO messages are carried as link-local multicast traffic so one-hop
+# neighbours can process routing advertisements without unicast addressing.
 RPL_MULTICAST_IPV6 = "ff02::1a"
 
 _RPL_DIO = struct.Struct("!BBH")
