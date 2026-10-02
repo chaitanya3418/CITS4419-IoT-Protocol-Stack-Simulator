@@ -209,9 +209,6 @@ class Node:
     ):
         """Create a UDP datagram carrying an upper-layer payload."""
 
-        # Temporary integration bridge.
-        # The serializers will be moved into the shared package later.
-
         payload_bytes = serialize_udp_payload(payload)
 
         udp_datagram = {
@@ -581,6 +578,11 @@ class Node:
         ciphertext = esp_packet["encrypted_payload"]
         next_header = esp_packet["next_header"]
         received_hmac = esp_packet["authentication_data"]
+
+        print(
+            f"[Node {self.name}][IPsec ESP] "
+            f"Received Ciphertext={ciphertext.hex()}"
+        )
 
         authenticated_data = (
             esp_packet["spi"].to_bytes(4, "big")

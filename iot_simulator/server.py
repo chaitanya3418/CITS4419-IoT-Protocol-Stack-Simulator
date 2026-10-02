@@ -251,7 +251,6 @@ class CoAPServer:
     def send_coap(self, request):
         # Create a simplified successful piggybacked response to the POST request.
         # The ACK reuses the request Message ID and Token.
-        # TODO(COAP): Confirm the selected response code and payload against Lecture 6.
         response = {
             "version": 1,
             "type": "ACK",
