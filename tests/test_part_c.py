@@ -199,7 +199,8 @@ class TestPartCIntegration(unittest.TestCase):
                 nodes["A"].network.attach_server(server)
                 source = nodes[source_name]
 
-                # Monitor receive_coap() to verify that the response returns to the source node correctly.
+                # Monitor the server to verify that the request arrives.
+                # Monitor the source node to verify that the ACK returns.
                 with patch.object(
                     server,
                     "receive_coap",

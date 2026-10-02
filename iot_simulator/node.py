@@ -201,6 +201,7 @@ class Node:
 
         self._require_network().transmit(self, frame.to_bytes())
 
+    # Part C carries CoAP directly in UDP; Part D carries a DTLS record instead.
     def send_udp(
         self,
         payload,
@@ -237,6 +238,7 @@ class Node:
 
         return udp_datagram
 
+    # Application layer entry point used by both Part C and Part D.
     def send_coap(self, temperature):
         """Create the Part C CoAP CON POST request."""
 
@@ -370,11 +372,13 @@ class Node:
             frame_type=FrameType.CONTROL,
         )
 
+    # Part D protects the CoAP message before it is placed inside UDP.
     def send_dtls(self, coap_message):
         """Protect a CoAP message using the simplified DTLS model."""
 
         plaintext = serialize_coap(coap_message)
 
+        # Bind integrity protection to this DTLS record number as well as the CoAP data.
         sequence_bytes = (
             self.dtls_sequence_number.to_bytes(6, "big")
         )
@@ -451,6 +455,7 @@ class Node:
 
         return dtls_record
 
+    # ESP sits below UDP, so the complete UDP datagram is encrypted and authenticated.
     def send_ipsec(self, udp_datagram):
         """Protect a complete UDP datagram using simplified ESP."""
 
@@ -486,6 +491,7 @@ class Node:
         )
         next_header_bytes = next_header.to_bytes(1, "big")
 
+        # Authenticate the ESP metadata and ciphertext so tampering is detected before use.
         authenticated_data = (
             spi_bytes
             + sequence_bytes
@@ -547,6 +553,7 @@ class Node:
 
         return esp_packet
 
+    # Receive path reverses the sender stack: ESP -> UDP -> DTLS -> CoAP.
     def receive_ipsec(self, esp_packet):
         """Verify and decrypt a simplified ESP packet."""
 
@@ -591,6 +598,7 @@ class Node:
             + next_header.to_bytes(1, "big")
         )
 
+        # Verify integrity before accepting the packet or recording its sequence number.
         expected_hmac = hmac.new(
             self.ipsec_hmac_key,
             authenticated_data,
@@ -612,7 +620,7 @@ class Node:
             "HMAC Verification=SUCCESS"
         )
 
-        # Reject a sequence number that has already been accepted.
+        # Reject an ESP sequence number that has already been accepted on this SA.
         if (
             sequence_number
             in self.received_esp_sequence_numbers
@@ -682,6 +690,7 @@ class Node:
             secure=True,
         )
 
+    # DTLS unwraps the protected CoAP message after ESP and UDP processing.
     def receive_dtls(self, dtls_record):
         """Decrypt and verify a simplified DTLS record."""
 
@@ -739,6 +748,7 @@ class Node:
             )
             return None
 
+        # The final 32 bytes are the HMAC; the remaining bytes are the CoAP message.
         plaintext = data_with_hmac[:-32]
         received_hmac = data_with_hmac[-32:]
 
@@ -921,6 +931,7 @@ class Node:
             )
             return
 
+        # Next Header 50 means the IPv6 payload must be processed by ESP first.
         if packet.next_header == NEXT_HEADER_ESP:
             print(
                 f"[Node {self.name}][IPv6] "
@@ -944,6 +955,7 @@ class Node:
             )
             return
 
+        # Next Header 17 is the plaintext Part C path: IPv6 -> UDP -> CoAP.
         if packet.next_header == NEXT_HEADER_UDP:
 
             print(
@@ -1052,6 +1064,7 @@ class Node:
             )
             return
 
+        # In Part D the UDP payload is DTLS; in Part C it is already CoAP.
         if secure:
             print(
                 f"[Node {self.name}][UDP] "

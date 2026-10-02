@@ -54,6 +54,7 @@ class CoAPServer:
         # Remember accepted inbound ESP sequence numbers for replay protection.
         self.received_esp_sequence_numbers = set()
 
+    # Server entry point: dispatch the IPv6 payload to the Part C or Part D stack.
     def receive_ipv6(self, packet_bytes):
         """Receive an IPv6 packet delivered by gateway Node A."""
 
@@ -74,7 +75,7 @@ class CoAPServer:
             )
             return None
 
-        # Unsecured receive path: UDP -> CoAP.
+        # Part C has no security layer: IPv6 -> UDP -> CoAP.
         if packet.next_header == NEXT_HEADER_UDP:
             print(
                 f"[{self.name}][IPv6] Passing payload to UDP"
@@ -110,7 +111,7 @@ class CoAPServer:
 
             return coap_response
 
-        # Secure receive path: ESP -> UDP -> DTLS -> CoAP.
+        # Part D reverses the sender encapsulation: ESP -> UDP -> DTLS -> CoAP.
         if packet.next_header == NEXT_HEADER_ESP:
             print(
                 f"[{self.name}][IPv6] "
@@ -128,7 +129,8 @@ class CoAPServer:
             if coap_response is None:
                 return None
 
-            # Protect the response as CoAP -> DTLS -> UDP -> ESP -> IPv6.
+            # Rebuild the secure response from application layer back down the stack.
+            # CoAP -> DTLS -> UDP -> ESP -> IPv6
             dtls_response = self.send_dtls(
                 coap_response
             )
@@ -187,6 +189,7 @@ class CoAPServer:
             packet.to_bytes()
         )
 
+    # The secure flag tells UDP whether its payload is DTLS or plaintext CoAP.
     def receive_udp(self, udp_datagram, secure=False):
         print(f"[{self.name}][UDP] Received UDP datagram")
         print(
@@ -245,6 +248,7 @@ class CoAPServer:
         response = self.send_coap(coap_message)
         return response
 
+    # Build a piggybacked ACK so the response reuses the request MID and Token.
     def send_coap(self, request):
         # Build a piggybacked success response and reuse the request Message ID
         # and Token so the client can match the acknowledgement.
@@ -298,6 +302,7 @@ class CoAPServer:
 
         return udp_datagram
 
+    # DTLS protects only the CoAP message; UDP and ESP are added afterwards.
     def send_dtls(self, coap_message):
         # Protect the serialized CoAP message with the established DTLS context.
         plaintext = serialize_coap(coap_message)
@@ -353,6 +358,7 @@ class CoAPServer:
         self.dtls_sequence_number += 1
         return dtls_record
 
+    # DTLS recovery produces the original CoAP bytes after decryption and HMAC checking.
     def receive_dtls(self, dtls_record):
         print()
         print(f"[{self.name}][DTLS] Received DTLS record")
@@ -412,6 +418,7 @@ class CoAPServer:
         return coap_message
     
 
+    # ESP protects the whole UDP datagram, including its DTLS payload.
     def send_ipsec(self, udp_datagram):
         plaintext = serialize_udp(udp_datagram)
 
@@ -479,6 +486,7 @@ class CoAPServer:
 
         return esp_packet
 
+    # Verify ESP integrity/replay state before passing recovered bytes up to UDP.
     def receive_ipsec(self, esp_packet):
         print()
         print(f"[{self.name}][IPsec ESP] Received ESP packet")
@@ -528,7 +536,7 @@ class CoAPServer:
 
         print(f"[{self.name}][IPsec ESP] HMAC Verification=SUCCESS")
 
-        # Reject ESP packets whose sequence number has already been accepted.
+        # A repeated sequence number represents a replay of an already accepted packet.
         if sequence_number in self.received_esp_sequence_numbers:
             print(
                 f"[{self.name}][IPsec ESP] Replay Check=FAILED "

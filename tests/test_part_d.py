@@ -419,6 +419,8 @@ class TestPartDNetworkIntegration(unittest.TestCase):
                 nodes["A"].network.attach_server(server)
                 source = nodes[source_name]
 
+                # Monitor both endpoints to verify that the secure request
+                # and ACK complete the round trip.
                 with patch.object(
                     server,
                     "receive_coap",
