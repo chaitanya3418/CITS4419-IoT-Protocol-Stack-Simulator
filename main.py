@@ -50,6 +50,7 @@ def run_part_c(source, server) -> None:
     print("PART C: UDP + CoAP SENSOR COMMUNICATION")
     print("=" * 72)
 
+    # Part C sender flow: CoAP -> UDP -> IPv6.
     coap_request = source.send_coap(24)
 
     udp_request = source.send_udp(
