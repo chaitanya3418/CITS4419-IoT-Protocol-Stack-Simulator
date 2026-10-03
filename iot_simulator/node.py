@@ -1,7 +1,7 @@
 """Node model used by the IoT protocol stack simulator.
 
-The Node class is extended progressively across Parts A-D so that each
-protocol-layer operation remains easy to follow during the demonstration.
+The Node class groups protocol-layer send and receive operations so each
+stage remains easy to follow during the demonstration.
 """
 
 from __future__ import annotations
@@ -102,7 +102,7 @@ class Node:
     )
 
     def setup(self) -> None:
-        """Initialize the node and print its required identification details."""
+        """Initialize the node and print its configured identification details."""
         rank_text = "infinity" if self.rank == RPL_INFINITY else str(self.rank)
         parent_text = self.parent if self.parent is not None else "None"
 
@@ -201,7 +201,7 @@ class Node:
 
         self._require_network().transmit(self, frame.to_bytes())
 
-    # Part C carries CoAP directly in UDP; Part D carries a DTLS record instead.
+    # Unsecured traffic carries CoAP directly in UDP, while secure traffic carries a DTLS record.
     def send_udp(
         self,
         payload,
@@ -238,9 +238,9 @@ class Node:
 
         return udp_datagram
 
-    # Application layer entry point used by both Part C and Part D.
+    # Application-layer entry point for creating the CoAP sensor request.
     def send_coap(self, temperature):
-        """Create the Part C CoAP CON POST request."""
+        """Create a confirmable CoAP POST request for the temperature resource."""
 
         token = b"\x01\x02"
 
@@ -372,7 +372,7 @@ class Node:
             frame_type=FrameType.CONTROL,
         )
 
-    # Part D protects the CoAP message before it is placed inside UDP.
+    # Protect the CoAP message with DTLS before encapsulating it in UDP.
     def send_dtls(self, coap_message):
         """Protect a CoAP message using the simplified DTLS model."""
 
@@ -955,7 +955,7 @@ class Node:
             )
             return
 
-        # Next Header 17 is the plaintext Part C path: IPv6 -> UDP -> CoAP.
+        # Next Header 17 identifies the unsecured IPv6 -> UDP -> CoAP path.
         if packet.next_header == NEXT_HEADER_UDP:
 
             print(
@@ -1064,7 +1064,7 @@ class Node:
             )
             return
 
-        # In Part D the UDP payload is DTLS; in Part C it is already CoAP.
+        # Secure UDP payloads contain DTLS records; unsecured payloads contain CoAP directly.
         if secure:
             print(
                 f"[Node {self.name}][UDP] "

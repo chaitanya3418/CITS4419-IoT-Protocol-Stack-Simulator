@@ -54,7 +54,7 @@ class CoAPServer:
         # Remember accepted inbound ESP sequence numbers for replay protection.
         self.received_esp_sequence_numbers = set()
 
-    # Server entry point: dispatch the IPv6 payload to the Part C or Part D stack.
+    # Dispatch the IPv6 payload according to its Next Header value.
     def receive_ipv6(self, packet_bytes):
         """Receive an IPv6 packet delivered by gateway Node A."""
 
@@ -75,7 +75,7 @@ class CoAPServer:
             )
             return None
 
-        # Part C has no security layer: IPv6 -> UDP -> CoAP.
+        # Unsecured traffic follows IPv6 -> UDP -> CoAP.
         if packet.next_header == NEXT_HEADER_UDP:
             print(
                 f"[{self.name}][IPv6] Passing payload to UDP"
@@ -111,7 +111,7 @@ class CoAPServer:
 
             return coap_response
 
-        # Part D reverses the sender encapsulation: ESP -> UDP -> DTLS -> CoAP.
+        # Secure traffic is decapsulated as ESP -> UDP -> DTLS -> CoAP.
         if packet.next_header == NEXT_HEADER_ESP:
             print(
                 f"[{self.name}][IPv6] "
@@ -129,7 +129,7 @@ class CoAPServer:
             if coap_response is None:
                 return None
 
-            # Rebuild the secure response from application layer back down the stack.
+            # Rebuild the secure response from the application layer back down the stack:
             # CoAP -> DTLS -> UDP -> ESP -> IPv6
             dtls_response = self.send_dtls(
                 coap_response
@@ -248,7 +248,6 @@ class CoAPServer:
         response = self.send_coap(coap_message)
         return response
 
-    # Build a piggybacked ACK so the response reuses the request MID and Token.
     def send_coap(self, request):
         # Build a piggybacked success response and reuse the request Message ID
         # and Token so the client can match the acknowledgement.

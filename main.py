@@ -15,7 +15,7 @@ from iot_simulator.server import CoAPServer
 
 
 def select_part() -> str:
-    """Ask the user which project part to demonstrate."""
+    """Ask the user whether to run the unsecured or secured demonstration."""
 
     while True:
         choice = input(
@@ -50,7 +50,7 @@ def run_part_c(source, server) -> None:
     print("PART C: UDP + CoAP SENSOR COMMUNICATION")
     print("=" * 72)
 
-    # Part C sender flow: CoAP -> UDP -> IPv6.
+    # Unsecured sender flow: CoAP -> UDP -> IPv6.
     coap_request = source.send_coap(24)
 
     udp_request = source.send_udp(
