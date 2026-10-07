@@ -53,6 +53,32 @@ def deserialize_udp(data, secure=False):
         "payload": payload
     }
 
+def calculate_udp_checksum(
+    source_port,
+    destination_port,
+    length,
+    payload_bytes,
+):
+    # Build the UDP header with checksum set to 0 for calculation.
+    data = struct.pack(
+        "!HHHH",
+        source_port,
+        destination_port,
+        length,
+        0,
+    ) + payload_bytes
+
+    # Pad an odd number of bytes so every word is 16 bits.
+    if len(data) % 2 != 0:
+        data += b"\x00"
+
+    checksum = 0
+
+    for i in range(0, len(data), 2):
+        word = int.from_bytes(data[i:i + 2], "big")
+        checksum ^= word
+
+    return checksum
 
 def serialize_udp_payload(payload):
             # DTLS record

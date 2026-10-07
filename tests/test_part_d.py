@@ -18,6 +18,8 @@ from iot_simulator.esp import (
 from iot_simulator.udp import (
     deserialize_udp,
     serialize_udp,
+    serialize_udp_payload,
+    calculate_udp_checksum,
 )
 
 from iot_simulator.server import CoAPServer
@@ -460,6 +462,26 @@ class TestPartDNetworkIntegration(unittest.TestCase):
                 self.assertEqual(response["message_id"], 1001)
                 self.assertEqual(response["token"], b"\x01\x02")
                 self.assertEqual(response["payload"], "Temperature updated")
+
+    def test_udp_checksum_matches_xor_rule(self):
+        source = self.nodes["D"]
+
+        coap_request = source.send_coap(24)
+        udp_datagram = source.send_udp(coap_request)
+
+        payload_bytes = serialize_udp_payload(coap_request)
+
+        expected_checksum = calculate_udp_checksum(
+            udp_datagram["source_port"],
+            udp_datagram["destination_port"],
+            udp_datagram["length"],
+            payload_bytes,
+        )
+
+        self.assertEqual(
+            udp_datagram["checksum"],
+            expected_checksum,
+        )
 
 
 
