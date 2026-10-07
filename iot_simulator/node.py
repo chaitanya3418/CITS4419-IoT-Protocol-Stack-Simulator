@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING
 from .mac import BROADCAST_MAC, FrameType, MACFrame
 from .rpl import RPL_INFINITY, RPL_MULTICAST_IPV6, RPLDIO
 
-from .udp import serialize_udp, deserialize_udp, serialize_udp_payload
+from .udp import serialize_udp, deserialize_udp, serialize_udp_payload, calculate_udp_checksum
 from .coap import serialize_coap, deserialize_coap
 from .dtls import serialize_dtls, deserialize_dtls
 
@@ -212,11 +212,18 @@ class Node:
 
         payload_bytes = serialize_udp_payload(payload)
 
+        checksum = calculate_udp_checksum(
+            src_port,
+            dst_port,
+            8 + len(payload_bytes),
+            payload_bytes,
+        )
+
         udp_datagram = {
             "source_port": src_port,
             "destination_port": dst_port,
             "length": 8 + len(payload_bytes),
-            "checksum": 0,
+            "checksum": checksum,
             "payload": payload,
         }
 
@@ -234,6 +241,10 @@ class Node:
         print(
             f"[Node {self.name}][UDP] "
             f"Length={udp_datagram['length']} bytes"
+        )
+        print(
+            f"[Node {self.name}][UDP] "
+            f"Checksum=0x{checksum:04X}"
         )
 
         return udp_datagram

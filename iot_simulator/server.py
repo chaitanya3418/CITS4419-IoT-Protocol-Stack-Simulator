@@ -29,6 +29,7 @@ from iot_simulator.udp import (
     deserialize_udp,
     serialize_udp,
     serialize_udp_payload,
+    calculate_udp_checksum,
 )
 
 class CoAPServer:
@@ -285,11 +286,18 @@ class CoAPServer:
         # Serialize the upper-layer payload to calculate the UDP datagram length.
         payload_bytes = serialize_udp_payload(payload)
 
+        checksum = calculate_udp_checksum(
+            self.udp_port,
+            dst_port,
+            8 + len(payload_bytes),
+            payload_bytes,
+        )
+
         udp_datagram = {
             "source_port": self.udp_port,
             "destination_port": dst_port,
             "length": 8 + len(payload_bytes),
-            "checksum": 0,  # The current simulator stores zero in the checksum field.
+            "checksum": checksum,
             "payload": payload
         }
 
@@ -298,6 +306,10 @@ class CoAPServer:
         print(f"[{self.name}][UDP] Source Port={self.udp_port}")
         print(f"[{self.name}][UDP] Destination Port={dst_port}")
         print(f"[{self.name}][UDP] Length={udp_datagram['length']} bytes")
+        print(
+            f"[{self.name}][UDP] "
+            f"Checksum=0x{checksum:04X}"
+        )
 
         return udp_datagram
 
