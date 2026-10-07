@@ -249,12 +249,12 @@ class TestDTLS(unittest.TestCase):
 
 
 class TestPartDNetworkIntegration(unittest.TestCase):
-    """Integration tests for secure Part D communication."""
+    """Integration tests for DTLS- and ESP-protected communication."""
 
     def setUp(self):
         self.nodes = build_iot_network()
 
-        # RPL convergence produces a lot of log output.
+        # Suppress verbose topology-convergence output during automated tests.
         with redirect_stdout(io.StringIO()):
             converge_rpl(
                 self.nodes
@@ -407,7 +407,7 @@ class TestPartDNetworkIntegration(unittest.TestCase):
             "Temperature updated",
         )
     def test_all_source_nodes_can_complete_secure_round_trip(self):
-        """Every selectable source A-E should complete a secure Part D exchange."""
+        """Every selectable source A-E should complete a secure request/response."""
 
         for source_name in ("A", "B", "C", "D", "E"):
             with self.subTest(source=source_name):

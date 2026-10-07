@@ -8,8 +8,8 @@ from .dtls import deserialize_dtls, serialize_dtls
 def serialize_udp(udp_datagram):
     payload = udp_datagram["payload"]
 
-    # Part C: plaintext CoAP
-    # Part D: DTLS record
+    # Unsecured mode carries a plaintext CoAP message.
+    # Secure mode carries a serialized DTLS record.
     payload_bytes = serialize_udp_payload(payload)
 
     udp_length = 8 + len(payload_bytes)
@@ -39,10 +39,10 @@ def deserialize_udp(data, secure=False):
     payload_bytes = data[8:length]
 
     if secure:
-        # Part D: UDP payload contains a DTLS record
+        # Secure UDP payload contains a DTLS record.
         payload = deserialize_dtls(payload_bytes)
     else:
-        # Part C: UDP payload contains plaintext CoAP
+        # Unsecured UDP payload contains plaintext CoAP.
         payload = deserialize_coap(payload_bytes)
 
     return {
@@ -90,5 +90,5 @@ def serialize_udp_payload(payload):
             ):
                 return serialize_dtls(payload)
 
-            # Plain CoAP message used in Part C
+            # Decode a plaintext CoAP message.
             return serialize_coap(payload)

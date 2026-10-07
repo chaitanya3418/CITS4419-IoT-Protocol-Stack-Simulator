@@ -1,7 +1,7 @@
 """Node model used by the IoT protocol stack simulator.
 
-The Node class is extended progressively across Parts A-D so that each
-protocol-layer operation remains easy to follow during the demonstration.
+The Node class groups protocol-layer send and receive operations so each
+stage remains easy to follow during the demonstration.
 """
 
 from __future__ import annotations
@@ -50,13 +50,13 @@ class Node:
     neighbors: list[str] = field(default_factory=list)
     mac_sequence_number: int = 0
 
-    # Part B RPL state.
+    # RPL routing state learned during topology formation.
     rank: int = RPL_INFINITY
     parent: str | None = None
 
     network: Network | None = field(default=None, repr=False, compare=False)
 
-    # Part D IPsec ESP security context.
+    # Pre-shared DTLS and IPsec security state.
     dtls_encryption_key: bytes = field(
         default=b"0123456789ABCDEF",
         repr=False,
@@ -93,7 +93,7 @@ class Node:
         compare=False,
     )
 
-    # Observable MAC state used by tests and later protocol layers.
+    # MAC receive state used to track acknowledgements and delivered payloads.
     last_ack_sequence: int | None = field(default=None, init=False)
     received_mac_payloads: list[bytes] = field(default_factory=list, init=False)
     received_control_payloads: list[bytes] = field(
@@ -102,7 +102,7 @@ class Node:
     )
 
     def setup(self) -> None:
-        """Initialize the node and print its required identification details."""
+        """Initialize the node and print its configured identification details."""
         rank_text = "infinity" if self.rank == RPL_INFINITY else str(self.rank)
         parent_text = self.parent if self.parent is not None else "None"
 
@@ -201,7 +201,7 @@ class Node:
 
         self._require_network().transmit(self, frame.to_bytes())
 
-    # Part C carries CoAP directly in UDP; Part D carries a DTLS record instead.
+    # Unsecured traffic carries CoAP directly in UDP, while secure traffic carries a DTLS record.
     def send_udp(
         self,
         payload,
@@ -249,9 +249,9 @@ class Node:
 
         return udp_datagram
 
-    # Application layer entry point used by both Part C and Part D.
+    # Application-layer entry point for creating the CoAP sensor request.
     def send_coap(self, temperature):
-        """Create the Part C CoAP CON POST request."""
+        """Create a confirmable CoAP POST request for the temperature resource."""
 
         token = b"\x01\x02"
 
@@ -312,9 +312,8 @@ class Node:
         )
 
         if next_hop is None:
-            # Node A may itself be the application source.
-            # In that case there is no wireless RPL hop:
-            # send directly through A's wired interface.
+            # When Node A originates traffic for the server, it can
+            # forward directly over its wired interface.
             if (
                 network.server is not None
                 and destination_ipv6
@@ -384,7 +383,7 @@ class Node:
             frame_type=FrameType.CONTROL,
         )
 
-    # Part D protects the CoAP message before it is placed inside UDP.
+    # Protect the CoAP message with DTLS before encapsulating it in UDP.
     def send_dtls(self, coap_message):
         """Protect a CoAP message using the simplified DTLS model."""
 
@@ -401,7 +400,7 @@ class Node:
             hashlib.sha256,
         ).digest()
 
-        # Encrypt CoAP plaintext + HMAC together.
+        # Append the HMAC to the CoAP bytes before encrypting the protected data.
         data_with_hmac = plaintext + hmac_value
 
         iv = os.urandom(16)
@@ -424,8 +423,8 @@ class Node:
             + encryptor.finalize()
         )
 
-        # Simplified DTLS Protected Data:
-        # IV || Encrypt(CoAP || HMAC)
+        # Store the IV before the ciphertext so the receiver can reproduce
+        # the AES-CBC decryption parameters.
         protected_data = iv + ciphertext
 
         dtls_record = {
@@ -471,7 +470,7 @@ class Node:
     def send_ipsec(self, udp_datagram):
         """Protect a complete UDP datagram using simplified ESP."""
 
-        # ESP protects UDP header + UDP payload.
+        # Encrypt the complete serialized UDP datagram before adding ESP metadata.
         plaintext = serialize_udp(udp_datagram)
 
         iv = os.urandom(16)
@@ -494,7 +493,7 @@ class Node:
             + encryptor.finalize()
         )
 
-        # ESP Next Header = UDP.
+        # Record UDP as the protocol recovered after ESP decryption.
         next_header = 17
 
         spi_bytes = self.ipsec_spi.to_bytes(4, "big")
@@ -681,8 +680,8 @@ class Node:
             f"Decrypted Plaintext={plaintext.hex()}"
         )
 
-        # Only accept the sequence number after integrity
-        # and decryption have succeeded.
+        # Mark the sequence number as accepted only after integrity checks and
+        # decryption have completed successfully.
         self.received_esp_sequence_numbers.add(
             sequence_number
         )
@@ -696,7 +695,7 @@ class Node:
             "Passing decrypted payload to UDP"
         )
 
-        # Part D UDP payload is a DTLS record.
+        # In secure mode, the recovered UDP payload contains a DTLS record.
         return deserialize_udp(
             plaintext,
             secure=True,
@@ -849,7 +848,7 @@ class Node:
                 acknowledged_sequence=frame.sequence_number,
             )
 
-            # Part C/D DATA frames carry IPv6 packets.
+            # DATA frames containing a complete IPv6 packet are passed to the network layer.
             if len(frame.payload) >= IPV6_HEADER_LENGTH:
                 print(
                     f"[Node {self.name}][MAC] Passing DATA payload to IPv6"
@@ -871,8 +870,8 @@ class Node:
                     "no MAC ACK required"
                 )
 
-            # Part A allowed generic CONTROL payloads. From Part B onward,
-            # CONTROL payloads that contain a full IPv6 header are passed up.
+            # CONTROL frames may carry IPv6-encapsulated routing messages; pass a
+            # complete IPv6 packet upward when one is present.
             if len(frame.payload) >= IPV6_HEADER_LENGTH:
                 self.receive_ipv6(frame.payload)
 
@@ -895,7 +894,7 @@ class Node:
             f"Payload Length={len(packet.payload)}"
         )
 
-        # RPL CONTROL traffic is processed locally.
+        # ICMPv6/RPL control traffic is consumed locally instead of being forwarded.
         if packet.next_header == NEXT_HEADER_ICMPV6:
             self.receive_rpl_dio(
                 dio_bytes=packet.payload,
@@ -903,7 +902,7 @@ class Node:
             )
             return
 
-        # This node is only an intermediate router.
+        # Forward packets that are addressed to another IPv6 endpoint.
         if packet.destination_ipv6 != self.ipv6_address:
             network = self._require_network()
 
@@ -934,9 +933,8 @@ class Node:
                 f"toward Node {next_hop.name}"
             )
 
-            # IMPORTANT:
-            # Forward the original IPv6 packet unchanged.
-            # Only the MAC addresses change at each hop.
+            # Preserve the original IPv6 packet while forwarding because only
+            # link-layer MAC addresses change between wireless hops.
             self.send_mac(
                 payload=packet_bytes,
                 destination_mac=next_hop.mac_address,
@@ -968,7 +966,7 @@ class Node:
             )
             return
 
-        # Next Header 17 is the plaintext Part C path: IPv6 -> UDP -> CoAP.
+        # Next Header 17 identifies the unsecured IPv6 -> UDP -> CoAP path.
         if packet.next_header == NEXT_HEADER_UDP:
 
             print(
@@ -1047,8 +1045,8 @@ class Node:
             "rebroadcasting updated DIO"
         )
 
-        # A node that accepts a better route immediately advertises its new
-        # rank. Better-route-only updates prevent endless rebroadcast loops.
+        # Advertise a newly accepted rank so neighbours can reconsider their
+        # routes. Restricting updates to better routes prevents rebroadcast loops.
         self.send_rpl_dio()
         return True
 
@@ -1077,7 +1075,7 @@ class Node:
             )
             return
 
-        # In Part D the UDP payload is DTLS; in Part C it is already CoAP.
+        # Secure UDP payloads contain DTLS records; unsecured payloads contain CoAP directly.
         if secure:
             print(
                 f"[Node {self.name}][UDP] "

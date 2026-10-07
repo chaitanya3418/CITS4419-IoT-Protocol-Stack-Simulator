@@ -39,25 +39,23 @@ class CoAPServer:
         self.mac_address = "00:00:01:02"
         self.udp_port = 5683
 
-        # Part D - DTLS security context.
-        # The project assumes the DTLS handshake has already completed
-        # and both endpoints already share these keys.
+        # DTLS security context uses pre-shared keys; handshake processing is
+        # outside the simulated data path.
         self.dtls_encryption_key = b"0123456789ABCDEF"
         self.dtls_hmac_key = b"ABCDEF0123456789"
         self.dtls_epoch = 1
         self.dtls_sequence_number = 0
 
-        # Part D - IPsec ESP security context.
-        # The Security Association is assumed to already be established.
+        # ESP security context represents an already established Security Association.
         self.ipsec_encryption_key = b"IPSEC-ENC-KEY-01"
         self.ipsec_hmac_key = b"IPSEC-HMAC-KEY1"
         self.ipsec_spi = 0x00000001
         self.esp_sequence_number = 1
 
-        # Track accepted inbound ESP sequence numbers for replay protection.
+        # Remember accepted inbound ESP sequence numbers for replay protection.
         self.received_esp_sequence_numbers = set()
 
-    # Server entry point: dispatch the IPv6 payload to the Part C or Part D stack.
+    # Dispatch the IPv6 payload according to its Next Header value.
     def receive_ipv6(self, packet_bytes):
         """Receive an IPv6 packet delivered by gateway Node A."""
 
@@ -78,7 +76,7 @@ class CoAPServer:
             )
             return None
 
-        # Part C has no security layer: IPv6 -> UDP -> CoAP.
+        # Unsecured traffic follows IPv6 -> UDP -> CoAP.
         if packet.next_header == NEXT_HEADER_UDP:
             print(
                 f"[{self.name}][IPv6] Passing payload to UDP"
@@ -114,7 +112,7 @@ class CoAPServer:
 
             return coap_response
 
-        # Part D reverses the sender encapsulation: ESP -> UDP -> DTLS -> CoAP.
+        # Secure traffic is decapsulated as ESP -> UDP -> DTLS -> CoAP.
         if packet.next_header == NEXT_HEADER_ESP:
             print(
                 f"[{self.name}][IPv6] "
@@ -132,7 +130,7 @@ class CoAPServer:
             if coap_response is None:
                 return None
 
-            # Rebuild the secure response from application layer back down the stack.
+            # Rebuild the secure response from the application layer back down the stack:
             # CoAP -> DTLS -> UDP -> ESP -> IPv6
             dtls_response = self.send_dtls(
                 coap_response
@@ -214,7 +212,7 @@ class CoAPServer:
 
         if secure:
             print(f"[{self.name}][UDP] Passing payload to DTLS")
-            # In Part D, the UDP payload is a DTLS record rather than plaintext CoAP.
+            # In secure mode, the UDP payload contains a DTLS record rather than plaintext CoAP.
             coap_message = self.receive_dtls(
                 udp_datagram["payload"]
             )
@@ -251,10 +249,9 @@ class CoAPServer:
         response = self.send_coap(coap_message)
         return response
 
-    # Build a piggybacked ACK so the response reuses the request MID and Token.
     def send_coap(self, request):
-        # Create a simplified successful piggybacked response to the POST request.
-        # The ACK reuses the request Message ID and Token.
+        # Build a piggybacked success response and reuse the request Message ID
+        # and Token so the client can match the acknowledgement.
         response = {
             "version": 1,
             "type": "ACK",
@@ -318,12 +315,10 @@ class CoAPServer:
 
     # DTLS protects only the CoAP message; UDP and ESP are added afterwards.
     def send_dtls(self, coap_message):
-        # Protect the CoAP message using the simplified DTLS model required
-        # by Part D. The handshake is assumed to have already completed.
+        # Protect the serialized CoAP message with the established DTLS context.
         plaintext = serialize_coap(coap_message)
 
-        # Week 8: the explicit 48-bit DTLS sequence number is included
-        # in the HMAC calculation.
+        # Include the 48-bit record sequence number in the HMAC input.
         sequence_bytes = self.dtls_sequence_number.to_bytes(6, "big")
         hmac_value = hmac.new(
             self.dtls_hmac_key,
@@ -331,7 +326,7 @@ class CoAPServer:
             hashlib.sha256
         ).digest()
 
-        # Week 8 record model encrypts Data + HMAC together.
+        # Append the HMAC before encryption so confidentiality covers the data and tag.
         data_with_hmac = plaintext + hmac_value
 
         # AES-CBC requires a new 16-byte IV and block-aligned input.
@@ -346,8 +341,8 @@ class CoAPServer:
         encryptor = cipher.encryptor()
         ciphertext = encryptor.update(padded_data) + encryptor.finalize()
 
-        # The project exposes one Protected Data field, so the IV is kept
-        # alongside the ciphertext that contains encrypted CoAP data + HMAC.
+        # Keep the IV alongside the ciphertext inside Protected Data so the
+        # receiver can reconstruct the AES-CBC parameters.
         protected_data = iv + ciphertext
 
         dtls_record = {
@@ -468,8 +463,8 @@ class CoAPServer:
             + next_header.to_bytes(1, "big")
         )
 
-        # Simulator design choice:
-        # authenticate all simplified ESP fields except Authentication Data itself.
+        # Authenticate the ESP metadata, IV, ciphertext and Next Header; the
+        # authentication field itself is excluded from the HMAC input.
         hmac_value = hmac.new(
             self.ipsec_hmac_key,
             authenticated_data,
@@ -515,7 +510,7 @@ class CoAPServer:
             f"{esp_packet['sequence_number']}"
         )
 
-        # Check that the packet belongs to the expected Security Association
+        # Verify that the SPI identifies the expected Security Association.
         if esp_packet["spi"] != self.ipsec_spi:
             print(f"[{self.name}][IPsec ESP] Invalid SPI - packet rejected")
             return None
@@ -531,7 +526,7 @@ class CoAPServer:
             f"{ciphertext.hex()}"
         )
 
-        # Reconstruct the same data authenticated by the sender
+        # Reconstruct the sender's authenticated byte sequence before verification.
         authenticated_data = (
             esp_packet["spi"].to_bytes(4, "big")
             + sequence_number.to_bytes(4, "big")
@@ -593,7 +588,7 @@ class CoAPServer:
             f"{plaintext.hex()}"
         )
 
-        # Only mark it as accepted after all checks/decryption succeed
+        # Record the sequence number only after verification and decryption succeed.
         self.received_esp_sequence_numbers.add(sequence_number)
 
         udp_datagram = deserialize_udp(
@@ -607,7 +602,8 @@ class CoAPServer:
         )
         print(f"[{self.name}][IPsec ESP] Passing decrypted payload to UDP")
 
-        # secure=True tells UDP that the recovered payload must continue through DTLS.
+        # Pass the recovered UDP datagram upward with secure=True so its payload
+        # is interpreted as a DTLS record.
         return self.receive_udp(
             udp_datagram,
             secure=True
